@@ -8,6 +8,8 @@ namespace AngryKoala.Data
 {
     public class DataService : BaseService<IDataService>, IDataService
     {
+        [SerializeField] private PlayerData _initialPlayerData;
+        
         [SerializeField] private PlayerData _playerData;
 
         public PlayerData PlayerData => _playerData;
@@ -36,8 +38,8 @@ namespace AngryKoala.Data
             if (!File.Exists(_playerDataPath))
             {
                 Debug.Log("Player data file not found.");
-                
-                // Write defaults once
+
+                ApplyInitialPlayerData();
                 SavePlayerData();
                 
                 return;
@@ -78,6 +80,25 @@ namespace AngryKoala.Data
             }
             
             Debug.Log("Player data loaded.");
+        }
+        
+        private void ApplyInitialPlayerData()
+        {
+            if (_initialPlayerData == null)
+            {
+                return;
+            }
+
+            if (_playerData == null)
+            {
+                Debug.LogWarning("PlayerData reference is null.");
+                return;
+            }
+
+            string json = JsonUtility.ToJson(_initialPlayerData, prettyPrint: false);
+            JsonUtility.FromJsonOverwrite(json, _playerData);
+
+            Debug.Log("Initial player data applied.");
         }
 
         public void SavePlayerData()
