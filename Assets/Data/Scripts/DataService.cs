@@ -15,6 +15,10 @@ namespace AngryKoala.Data
 
         public PlayerData PlayerData => _playerData;
 
+        [SerializeField] private GameData _gameData;
+        
+        public GameData GameData => _gameData;
+
         [SerializeField] private DataSerializationFormat _serializationFormat = DataSerializationFormat.Json;
 
         [SerializeField] private bool _useEncryption = false;

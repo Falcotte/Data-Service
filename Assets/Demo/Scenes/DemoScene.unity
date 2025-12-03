@@ -258,6 +258,7 @@ MonoBehaviour:
   _autoRegister: 1
   _initialPlayerData: {fileID: 11400000, guid: 1ce5e834e2892bb4ebadcdf5c4ca4fae, type: 2}
   _playerData: {fileID: 11400000, guid: b2e3c69b3490e374ba7a1c76b32aa7b8, type: 2}
+  _gameData: {fileID: 11400000, guid: bb09e972992cfa343b09242aa6eb06c7, type: 2}
   _serializationFormat: 0
   _useEncryption: 0
   _encryptionPassword: Password
