@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -11,12 +12,59 @@ namespace AngryKoala.Data
     public class DataServiceEditor : Editor
     {
         private DataService _dataService;
+        
+        private SerializedProperty _scriptProperty;
+        private SerializedProperty _autoRegisterProperty;
+        private SerializedProperty _playerDataProperty;
+        private SerializedProperty _initialPlayerDataProperty;
+        private SerializedProperty _serializationFormatProperty;
+        private SerializedProperty _useEncryptionProperty;
+        private SerializedProperty _encryptionPasswordProperty;
+
+        private void OnEnable()
+        {
+            SetSerializedProperties();
+        }
+        
+        private void SetSerializedProperties()
+        {
+            _scriptProperty = serializedObject.FindProperty("m_Script");
+            _autoRegisterProperty = serializedObject.FindProperty("_autoRegister");
+            _playerDataProperty = serializedObject.FindProperty("_playerData");
+            _initialPlayerDataProperty = serializedObject.FindProperty("_initialPlayerData");
+            _serializationFormatProperty = serializedObject.FindProperty("_serializationFormat");
+            _useEncryptionProperty = serializedObject.FindProperty("_useEncryption");
+            _encryptionPasswordProperty = serializedObject.FindProperty("_encryptionPassword");
+        }
 
         public override void OnInspectorGUI()
         {
-            DrawDefaultInspector();
-
-            _dataService = (DataService)target;
+            if (_dataService == null)
+            {
+                _dataService = (DataService)target;
+            }
+            
+            serializedObject.Update();
+            
+            if (_scriptProperty != null)
+            {
+                EditorGUI.BeginDisabledGroup(true);
+                EditorGUILayout.PropertyField(_scriptProperty);
+                EditorGUI.EndDisabledGroup();
+            }
+            
+            EditorGUILayout.PropertyField(_autoRegisterProperty);
+            EditorGUILayout.PropertyField(_playerDataProperty);
+            EditorGUILayout.PropertyField(_initialPlayerDataProperty);
+            EditorGUILayout.PropertyField(_serializationFormatProperty);
+            EditorGUILayout.PropertyField(_useEncryptionProperty);
+            
+            if (_useEncryptionProperty is { boolValue: true })
+            {
+                EditorGUILayout.PropertyField(_encryptionPasswordProperty);
+            }
+            
+            serializedObject.ApplyModifiedProperties();
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             {
@@ -24,15 +72,11 @@ namespace AngryKoala.Data
                 {
                     _dataService.LoadPlayerData();
                     EditorUtility.SetDirty(_dataService.PlayerData);
-
-                    Debug.Log("Player data loaded.");
                 }
 
                 if (GUILayout.Button("Save Player Data"))
                 {
                     _dataService.SavePlayerData();
-
-                    Debug.Log("Player data saved.");
                 }
 
                 if (GUILayout.Button("Reset Player Data"))
