@@ -14,5 +14,6 @@ namespace AngryKoala.Data
         
         void LoadGameData();
         void SaveGameData();
+        void ResetGameData();
     }
 }

@@ -15,6 +15,8 @@ namespace AngryKoala.Data
 
         public PlayerData PlayerData => _playerData;
 
+        [SerializeField] private GameData _defaultGameData;
+        
         [SerializeField] private GameData _gameData;
         
         public GameData GameData => _gameData;
@@ -152,15 +154,19 @@ namespace AngryKoala.Data
         
         public void LoadGameData()
         {
+            if (!File.Exists(_gameDataPath))
+            {
+                Debug.Log("Game data file not found. Applying default data if available and saving.");
+
+                ApplyDefaultGameData();
+                SaveGameData();
+
+                return;
+            }
+            
             if (_gameData == null)
             {
                 Debug.LogWarning("GameData reference is not assigned. Cannot load game data.");
-                return;
-            }
-
-            if (!File.Exists(_gameDataPath))
-            {
-                Debug.Log("Game data file not found. Using GameData asset values.");
                 return;
             }
 
@@ -191,6 +197,25 @@ namespace AngryKoala.Data
 
             Debug.Log("Game data loaded.");
         }
+        
+        private void ApplyDefaultGameData()
+        {
+            if (_defaultGameData == null)
+            {
+                return;
+            }
+
+            if (_gameData == null)
+            {
+                Debug.LogWarning("GameData reference is null.");
+                return;
+            }
+
+            string json = JsonUtility.ToJson(_defaultGameData, prettyPrint: false);
+            JsonUtility.FromJsonOverwrite(json, _gameData);
+
+            Debug.Log("Default game data applied.");
+        }
 
         public void SaveGameData()
         {
@@ -220,6 +245,14 @@ namespace AngryKoala.Data
             File.WriteAllBytes(_gameDataPath, bytes);
 
             Debug.Log("Game data saved.");
+        }
+        
+        public void ResetGameData()
+        {
+            ApplyDefaultGameData();
+            SaveGameData();
+
+            Debug.Log("Game data reset to initial defaults and saved.");
         }
 
         #region Utility
