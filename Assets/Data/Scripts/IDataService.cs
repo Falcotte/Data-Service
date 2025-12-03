@@ -8,5 +8,6 @@ namespace AngryKoala.Data
         
         void LoadPlayerData();
         void SavePlayerData();
+        void ResetPlayerData();
     }
 }

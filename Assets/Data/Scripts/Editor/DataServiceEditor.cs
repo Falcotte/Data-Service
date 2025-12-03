@@ -34,10 +34,23 @@ namespace AngryKoala.Data
 
                     Debug.Log("Player data saved.");
                 }
+
+                if (GUILayout.Button("Reset Player Data"))
+                {
+                    if (EditorUtility.DisplayDialog(
+                            "Reset To Initial Defaults",
+                            "This will overwrite PlayerData with the InitialPlayerData values.\n\nAre you sure?",
+                            "Yes", "No"))
+                    {
+                        _dataService.ResetPlayerData();
+
+                        EditorUtility.SetDirty(_dataService.PlayerData);
+                    }
+                }
             }
-            
+
             EditorGUILayout.EndVertical();
-            
+
             if (GUILayout.Button("Open Data Folder"))
             {
                 string folderPath = !string.IsNullOrEmpty(GetDataPath())
@@ -47,7 +60,7 @@ namespace AngryKoala.Data
                 OpenSaveFolder(folderPath);
             }
         }
-        
+
         private string GetDataPath()
         {
             if (_dataService == null)

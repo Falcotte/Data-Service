@@ -148,5 +148,13 @@ namespace AngryKoala.Data
             
             Debug.Log("Player data saved.");
         }
+        
+        public void ResetPlayerData()
+        {
+            ApplyInitialPlayerData();
+            SavePlayerData();
+
+            Debug.Log("Player data reset to initial defaults and saved.");
+        }
     }
 }
