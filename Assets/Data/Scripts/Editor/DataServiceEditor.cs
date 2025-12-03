@@ -96,6 +96,22 @@ namespace AngryKoala.Data
             }
 
             EditorGUILayout.EndVertical();
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            {
+                if (GUILayout.Button("Load Game Data"))
+                {
+                    _dataService.LoadGameData();
+                    EditorUtility.SetDirty(_dataService.GameData);
+                }
+
+                if (GUILayout.Button("Save Game Data"))
+                {
+                    _dataService.SaveGameData();
+                }
+            }
+
+            EditorGUILayout.EndVertical();
 
             if (GUILayout.Button("Open Data Folder"))
             {

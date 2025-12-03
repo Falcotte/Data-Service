@@ -29,6 +29,9 @@ namespace AngryKoala.Data
 
         private string _playerDataPath =>
             Path.Combine(Application.persistentDataPath, "PlayerData.dat");
+        
+        private string _gameDataPath =>
+            Path.Combine(Application.persistentDataPath, "GameData.dat");
 
         private static readonly byte[] _saltBytes = Encoding.UTF8.GetBytes("AngryKoala_Data_Salt");
 
@@ -48,7 +51,7 @@ namespace AngryKoala.Data
         {
             if (!File.Exists(_playerDataPath))
             {
-                Debug.Log("Player data file not found.");
+                Debug.Log("Player data file not found. Applying initial data if available and saving.");
 
                 ApplyInitialPlayerData();
                 SavePlayerData();
@@ -56,10 +59,17 @@ namespace AngryKoala.Data
                 return;
             }
 
+            if (_playerData == null)
+            {
+                Debug.LogWarning("PlayerData reference is null. Cannot load player data.");
+                return;
+            }
+
             byte[] bytes = File.ReadAllBytes(_playerDataPath);
 
             if (bytes.Length == 0)
             {
+                Debug.LogWarning("Player data file is empty.");
                 return;
             }
 
@@ -76,32 +86,9 @@ namespace AngryKoala.Data
                 }
             }
 
-            switch (_serializationFormat)
-            {
-                case DataSerializationFormat.Json:
-                {
-                    string json = Encoding.UTF8.GetString(bytes);
+            string json = DeserializeToJson(bytes);
 
-                    JsonUtility.FromJsonOverwrite(json, _playerData);
-                    break;
-                }
-
-                case DataSerializationFormat.Binary:
-                {
-                    using MemoryStream memoryStream = new MemoryStream(bytes);
-                    using BinaryReader binaryReader = new BinaryReader(memoryStream, Encoding.UTF8);
-
-                    string json = binaryReader.ReadString();
-
-                    JsonUtility.FromJsonOverwrite(json, _playerData);
-                    break;
-                }
-
-                default:
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
-            }
+            JsonUtility.FromJsonOverwrite(json, _playerData);
 
             Debug.Log("Player data loaded.");
         }
@@ -129,37 +116,12 @@ namespace AngryKoala.Data
         {
             if (_playerData == null)
             {
-                Debug.LogWarning("PlayerData reference is null.");
+                Debug.LogWarning("PlayerData reference is null. Cannot save player data.");
                 return;
             }
 
             string json = JsonUtility.ToJson(_playerData, prettyPrint: false);
-            byte[] bytes;
-
-            switch (_serializationFormat)
-            {
-                case DataSerializationFormat.Json:
-                {
-                    bytes = Encoding.UTF8.GetBytes(json);
-                    break;
-                }
-
-                case DataSerializationFormat.Binary:
-                {
-                    using MemoryStream memoryStream = new MemoryStream();
-                    using BinaryWriter binaryWriter = new BinaryWriter(memoryStream, Encoding.UTF8);
-
-                    binaryWriter.Write(json);
-                    binaryWriter.Flush();
-                    bytes = memoryStream.ToArray();
-                    break;
-                }
-
-                default:
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
-            }
+            byte[] bytes = SerializeFromJson(json);
 
             if (_useEncryption && bytes.Length > 0)
             {
@@ -174,13 +136,7 @@ namespace AngryKoala.Data
                 }
             }
 
-            string directory = Path.GetDirectoryName(_playerDataPath);
-
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
+            SetDirectory(_playerDataPath);
             File.WriteAllBytes(_playerDataPath, bytes);
 
             Debug.Log("Player data saved.");
@@ -193,9 +149,141 @@ namespace AngryKoala.Data
 
             Debug.Log("Player data reset to initial defaults and saved.");
         }
+        
+        public void LoadGameData()
+        {
+            if (_gameData == null)
+            {
+                Debug.LogWarning("GameData reference is not assigned. Cannot load game data.");
+                return;
+            }
+
+            if (!File.Exists(_gameDataPath))
+            {
+                Debug.Log("Game data file not found. Using GameData asset values.");
+                return;
+            }
+
+            byte[] bytes = File.ReadAllBytes(_gameDataPath);
+
+            if (bytes.Length == 0)
+            {
+                Debug.LogWarning("Game data file is empty.");
+                return;
+            }
+
+            if (_useEncryption)
+            {
+                try
+                {
+                    bytes = Decrypt(bytes);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"Failed to decrypt game data. {exception}");
+                    return;
+                }
+            }
+
+            string json = DeserializeToJson(bytes);
+
+            JsonUtility.FromJsonOverwrite(json, _gameData);
+
+            Debug.Log("Game data loaded.");
+        }
+
+        public void SaveGameData()
+        {
+            if (_gameData == null)
+            {
+                Debug.LogWarning("GameData reference is not assigned. Cannot save game data.");
+                return;
+            }
+
+            string json = JsonUtility.ToJson(_gameData, prettyPrint: false);
+            byte[] bytes = SerializeFromJson(json);
+
+            if (_useEncryption && bytes.Length > 0)
+            {
+                try
+                {
+                    bytes = Encrypt(bytes);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"Failed to encrypt game data. {exception}");
+                    return;
+                }
+            }
+
+            SetDirectory(_gameDataPath);
+            File.WriteAllBytes(_gameDataPath, bytes);
+
+            Debug.Log("Game data saved.");
+        }
 
         #region Utility
 
+        private string DeserializeToJson(byte[] bytes)
+        {
+            switch (_serializationFormat)
+            {
+                case DataSerializationFormat.Json:
+                {
+                    return Encoding.UTF8.GetString(bytes);
+                }
+
+                case DataSerializationFormat.Binary:
+                {
+                    using MemoryStream memoryStream = new MemoryStream(bytes);
+                    using BinaryReader binaryReader = new BinaryReader(memoryStream, Encoding.UTF8);
+
+                    return binaryReader.ReadString();
+                }
+
+                default:
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+            }
+        }
+
+        private byte[] SerializeFromJson(string json)
+        {
+            switch (_serializationFormat)
+            {
+                case DataSerializationFormat.Json:
+                {
+                    return Encoding.UTF8.GetBytes(json);
+                }
+
+                case DataSerializationFormat.Binary:
+                {
+                    using MemoryStream memoryStream = new MemoryStream();
+                    using BinaryWriter binaryWriter = new BinaryWriter(memoryStream, Encoding.UTF8);
+
+                    binaryWriter.Write(json);
+                    binaryWriter.Flush();
+                    return memoryStream.ToArray();
+                }
+
+                default:
+                {
+                    throw new ArgumentOutOfRangeException();
+                }
+            }
+        }
+        
+        private void SetDirectory(string path)
+        {
+            string directory = Path.GetDirectoryName(path);
+
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+        }
+        
         private byte[] Decrypt(byte[] cipherBytes)
         {
             if (string.IsNullOrEmpty(_encryptionPassword))
