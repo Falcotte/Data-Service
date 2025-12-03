@@ -18,6 +18,8 @@ namespace AngryKoala.Data
         private SerializedProperty _playerDataProperty;
         private SerializedProperty _defaultGameDataProperty;
         private SerializedProperty _gameDataProperty;
+        private SerializedProperty _defaultSettingsDataProperty;
+        private SerializedProperty _settingsDataProperty;
         private SerializedProperty _serializationFormatProperty;
         private SerializedProperty _useEncryptionProperty;
         private SerializedProperty _encryptionPasswordProperty;
@@ -35,6 +37,8 @@ namespace AngryKoala.Data
             _playerDataProperty = serializedObject.FindProperty("_playerData");
             _defaultGameDataProperty = serializedObject.FindProperty("_defaultGameData");
             _gameDataProperty = serializedObject.FindProperty("_gameData");
+            _defaultSettingsDataProperty = serializedObject.FindProperty("_defaultSettingsData");
+            _settingsDataProperty = serializedObject.FindProperty("_settingsData");
             _serializationFormatProperty = serializedObject.FindProperty("_serializationFormat");
             _useEncryptionProperty = serializedObject.FindProperty("_useEncryption");
             _encryptionPasswordProperty = serializedObject.FindProperty("_encryptionPassword");
@@ -61,6 +65,8 @@ namespace AngryKoala.Data
             EditorGUILayout.PropertyField(_playerDataProperty);
             EditorGUILayout.PropertyField(_defaultGameDataProperty);
             EditorGUILayout.PropertyField(_gameDataProperty);
+            EditorGUILayout.PropertyField(_defaultSettingsDataProperty);
+            EditorGUILayout.PropertyField(_settingsDataProperty);
             EditorGUILayout.PropertyField(_serializationFormatProperty);
             EditorGUILayout.PropertyField(_useEncryptionProperty);
             
@@ -127,6 +133,40 @@ namespace AngryKoala.Data
                 }
             }
 
+            EditorGUILayout.EndVertical();
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            {
+                if (GUILayout.Button("Load Settings Data"))
+                {
+                    _dataService.LoadSettingsData();
+                    if (_dataService.SettingsData != null)
+                    {
+                        EditorUtility.SetDirty(_dataService.SettingsData);
+                    }
+                }
+
+                if (GUILayout.Button("Save Settings Data"))
+                {
+                    _dataService.SaveSettingsData();
+                }
+
+                if (GUILayout.Button("Reset Settings Data"))
+                {
+                    if (EditorUtility.DisplayDialog(
+                            "Reset Settings To Defaults",
+                            "This will overwrite SettingsData with the DefaultSettingsData values (if assigned).\n\nAre you sure?",
+                            "Yes", "No"))
+                    {
+                        _dataService.ResetSettingsData();
+
+                        if (_dataService.SettingsData != null)
+                        {
+                            EditorUtility.SetDirty(_dataService.SettingsData);
+                        }
+                    }
+                }
+            }
             EditorGUILayout.EndVertical();
 
             if (GUILayout.Button("Open Data Folder"))
