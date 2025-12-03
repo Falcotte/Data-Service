@@ -6,8 +6,14 @@ namespace AngryKoala.Data
     {
         PlayerData PlayerData { get; }
         
+        GameData GameData { get; }
+        
         void LoadPlayerData();
         void SavePlayerData();
         void ResetPlayerData();
+        
+        void LoadGameData();
+        void SaveGameData();
+        void ResetGameData();
     }
 }

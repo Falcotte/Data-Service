@@ -14,8 +14,10 @@ namespace AngryKoala.Data
         
         private SerializedProperty _scriptProperty;
         private SerializedProperty _autoRegisterProperty;
-        private SerializedProperty _playerDataProperty;
         private SerializedProperty _initialPlayerDataProperty;
+        private SerializedProperty _playerDataProperty;
+        private SerializedProperty _defaultGameDataProperty;
+        private SerializedProperty _gameDataProperty;
         private SerializedProperty _serializationFormatProperty;
         private SerializedProperty _useEncryptionProperty;
         private SerializedProperty _encryptionPasswordProperty;
@@ -29,8 +31,10 @@ namespace AngryKoala.Data
         {
             _scriptProperty = serializedObject.FindProperty("m_Script");
             _autoRegisterProperty = serializedObject.FindProperty("_autoRegister");
-            _playerDataProperty = serializedObject.FindProperty("_playerData");
             _initialPlayerDataProperty = serializedObject.FindProperty("_initialPlayerData");
+            _playerDataProperty = serializedObject.FindProperty("_playerData");
+            _defaultGameDataProperty = serializedObject.FindProperty("_defaultGameData");
+            _gameDataProperty = serializedObject.FindProperty("_gameData");
             _serializationFormatProperty = serializedObject.FindProperty("_serializationFormat");
             _useEncryptionProperty = serializedObject.FindProperty("_useEncryption");
             _encryptionPasswordProperty = serializedObject.FindProperty("_encryptionPassword");
@@ -53,8 +57,10 @@ namespace AngryKoala.Data
             }
             
             EditorGUILayout.PropertyField(_autoRegisterProperty);
-            EditorGUILayout.PropertyField(_playerDataProperty);
             EditorGUILayout.PropertyField(_initialPlayerDataProperty);
+            EditorGUILayout.PropertyField(_playerDataProperty);
+            EditorGUILayout.PropertyField(_defaultGameDataProperty);
+            EditorGUILayout.PropertyField(_gameDataProperty);
             EditorGUILayout.PropertyField(_serializationFormatProperty);
             EditorGUILayout.PropertyField(_useEncryptionProperty);
             
@@ -88,6 +94,35 @@ namespace AngryKoala.Data
                         _dataService.ResetPlayerData();
 
                         EditorUtility.SetDirty(_dataService.PlayerData);
+                    }
+                }
+            }
+
+            EditorGUILayout.EndVertical();
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            {
+                if (GUILayout.Button("Load Game Data"))
+                {
+                    _dataService.LoadGameData();
+                    EditorUtility.SetDirty(_dataService.GameData);
+                }
+
+                if (GUILayout.Button("Save Game Data"))
+                {
+                    _dataService.SaveGameData();
+                }
+                
+                if (GUILayout.Button("Reset Game Data"))
+                {
+                    if (EditorUtility.DisplayDialog(
+                            "Reset To Initial Defaults",
+                            "This will overwrite GameData with the DefaultGameData values.\n\nAre you sure?",
+                            "Yes", "No"))
+                    {
+                        _dataService.ResetGameData();
+
+                        EditorUtility.SetDirty(_dataService.GameData);
                     }
                 }
             }
