@@ -12,6 +12,7 @@ namespace AngryKoala.Data
     {
         private const string _playerDataGeneratedFileName = "PlayerData.Properties.Generated.cs";
         private const string _gameDataGeneratedFileName = "GameData.Properties.Generated.cs";
+        private const string _settingsDataGeneratedFileName = "SettingsData.Properties.Generated.cs";
 
         [MenuItem("Angry Koala/Data/Generate PlayerData Properties", false, 0)]
         private static void GeneratePlayerDataProperties()
@@ -27,6 +28,14 @@ namespace AngryKoala.Data
             GenerateProperties<GameData>(
                 _gameDataGeneratedFileName,
                 "GameDataPropertyGenerator");
+        }
+        
+        [MenuItem("Angry Koala/Data/Generate SettingsData Properties", false, 2)]
+        private static void GenerateSettingsDataProperties()
+        {
+            GenerateProperties<SettingsData>(
+                _settingsDataGeneratedFileName,
+                "DataPropertyGenerator (SettingsData)");
         }
 
         private static void GenerateProperties<TData>(

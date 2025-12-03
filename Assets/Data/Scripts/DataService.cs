@@ -20,6 +20,12 @@ namespace AngryKoala.Data
         [SerializeField] private GameData _gameData;
         
         public GameData GameData => _gameData;
+        
+        [SerializeField] private SettingsData _defaultSettingsData;
+
+        [SerializeField] private SettingsData _settingsData;
+
+        public SettingsData SettingsData => _settingsData;
 
         [SerializeField] private DataSerializationFormat _serializationFormat = DataSerializationFormat.Json;
 
@@ -28,6 +34,7 @@ namespace AngryKoala.Data
         [SerializeField] private string _encryptionPassword = "Password";
 
         private string _dataPath => Application.persistentDataPath;
+        private const string _settingsPrefsKey = "AngryKoala.SettingsData";
 
         private string _playerDataPath =>
             Path.Combine(Application.persistentDataPath, "PlayerData.dat");
@@ -253,6 +260,79 @@ namespace AngryKoala.Data
             SaveGameData();
 
             Debug.Log("Game data reset to initial defaults and saved.");
+        }
+        
+        public void LoadSettingsData()
+        {
+            if (_settingsData == null)
+            {
+                Debug.LogWarning("SettingsData reference is not assigned. Cannot load settings.");
+                return;
+            }
+
+            if (!PlayerPrefs.HasKey(_settingsPrefsKey))
+            {
+                Debug.Log("Settings data not found in PlayerPrefs. Applying default settings if available and saving.");
+
+                ApplyDefaultSettingsData();
+                SaveSettingsData();
+
+                return;
+            }
+
+            string json = PlayerPrefs.GetString(_settingsPrefsKey, string.Empty);
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                Debug.LogWarning("Settings data in PlayerPrefs is empty.");
+                return;
+            }
+
+            JsonUtility.FromJsonOverwrite(json, _settingsData);
+
+            Debug.Log("Settings data loaded from PlayerPrefs.");
+        }
+        
+        private void ApplyDefaultSettingsData()
+        {
+            if (_defaultSettingsData == null)
+            {
+                return;
+            }
+
+            if (_settingsData == null)
+            {
+                Debug.LogWarning("SettingsData reference is null.");
+                return;
+            }
+
+            string json = JsonUtility.ToJson(_defaultSettingsData, prettyPrint: false);
+            JsonUtility.FromJsonOverwrite(json, _settingsData);
+
+            Debug.Log("Default settings data applied.");
+        }
+
+        public void SaveSettingsData()
+        {
+            if (_settingsData == null)
+            {
+                Debug.LogWarning("SettingsData reference is not assigned. Cannot save settings.");
+                return;
+            }
+
+            string json = JsonUtility.ToJson(_settingsData, prettyPrint: false);
+            PlayerPrefs.SetString(_settingsPrefsKey, json);
+            PlayerPrefs.Save();
+
+            Debug.Log("Settings data saved to PlayerPrefs.");
+        }
+
+        public void ResetSettingsData()
+        {
+            ApplyDefaultSettingsData();
+            SaveSettingsData();
+
+            Debug.Log("Settings data reset to default values and saved.");
         }
 
         #region Utility
