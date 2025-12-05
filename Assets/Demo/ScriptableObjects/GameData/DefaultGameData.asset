@@ -14,3 +14,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _maxLifeCount: 0
   _lifeReplenishDuration: 0
+  _srDebuggerOptions:
+  - _propertyName: MaxLifeCount
+    _settings:
+      _enabled: 0
+      _category: Game Data
+      _displayName: Max Life Count
+      _sort: 0
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0
+  - _propertyName: LifeReplenishDuration
+    _settings:
+      _enabled: 0
+      _category: Game Data
+      _displayName: Life Replenish Duration
+      _sort: 1
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0

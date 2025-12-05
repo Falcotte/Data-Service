@@ -12,5 +12,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 46051ec88f1cd3745a47f257a9f111a2, type: 3}
   m_Name: InitialPlayerData
   m_EditorClassIdentifier: 
-  _level: 1
+  _level: 0
   _score: 0
+  _srDebuggerOptions:
+  - _propertyName: Level
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Level
+      _sort: 0
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0
+  - _propertyName: Score
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Score
+      _sort: 1
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0

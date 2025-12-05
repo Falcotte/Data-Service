@@ -15,3 +15,37 @@ MonoBehaviour:
   _musicEnabled: 1
   _soundEnabled: 1
   _vibrationEnabled: 1
+  _srDebuggerOptions:
+  - _propertyName: MusicEnabled
+    _settings:
+      _enabled: 0
+      _category: Settings Data
+      _displayName: Music Enabled
+      _sort: 0
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0
+  - _propertyName: SoundEnabled
+    _settings:
+      _enabled: 0
+      _category: Settings Data
+      _displayName: Sound Enabled
+      _sort: 1
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0
+  - _propertyName: VibrationEnabled
+    _settings:
+      _enabled: 0
+      _category: Settings Data
+      _displayName: Vibration Enabled
+      _sort: 2
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 0
+      _increment: 0
