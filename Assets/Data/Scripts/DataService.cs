@@ -34,7 +34,6 @@ namespace AngryKoala.Data
         [SerializeField] private string _encryptionPassword = "Password";
 
         private string _dataPath => Application.persistentDataPath;
-        private const string _settingsPrefsKey = "AngryKoala.SettingsData";
 
         private string _playerDataPath =>
             Path.Combine(Application.persistentDataPath, "PlayerData.dat");
@@ -42,6 +41,9 @@ namespace AngryKoala.Data
         private string _gameDataPath =>
             Path.Combine(Application.persistentDataPath, "GameData.dat");
 
+        private string _settingsDataPath =>
+            Path.Combine(Application.persistentDataPath, "SettingsData.dat");
+        
         private static readonly byte[] _saltBytes = Encoding.UTF8.GetBytes("AngryKoala_Data_Salt");
 
         protected override void Awake()
@@ -264,15 +266,9 @@ namespace AngryKoala.Data
         
         public void LoadSettingsData()
         {
-            if (_settingsData == null)
+            if (!File.Exists(_settingsDataPath))
             {
-                Debug.LogWarning("SettingsData reference is not assigned. Cannot load settings.");
-                return;
-            }
-
-            if (!PlayerPrefs.HasKey(_settingsPrefsKey))
-            {
-                Debug.Log("Settings data not found in PlayerPrefs. Applying default settings if available and saving.");
+                Debug.Log("Settings data file not found. Applying default data if available and saving.");
 
                 ApplyDefaultSettingsData();
                 SaveSettingsData();
@@ -280,17 +276,26 @@ namespace AngryKoala.Data
                 return;
             }
 
-            string json = PlayerPrefs.GetString(_settingsPrefsKey, string.Empty);
-
-            if (string.IsNullOrWhiteSpace(json))
+            if (_settingsData == null)
             {
-                Debug.LogWarning("Settings data in PlayerPrefs is empty.");
+                Debug.LogWarning("SettingsData reference is not assigned. Cannot load settings data.");
                 return;
             }
 
+            byte[] bytes = File.ReadAllBytes(_settingsDataPath);
+
+            if (bytes.Length == 0)
+            {
+                Debug.LogWarning("Settings data file is empty.");
+                return;
+            }
+
+            // SettingsData is never encrypted, even if _useEncryption is true.
+            string json = DeserializeToJson(bytes);
+
             JsonUtility.FromJsonOverwrite(json, _settingsData);
 
-            Debug.Log("Settings data loaded from PlayerPrefs.");
+            Debug.Log("Settings data loaded.");
         }
         
         private void ApplyDefaultSettingsData()
@@ -316,15 +321,19 @@ namespace AngryKoala.Data
         {
             if (_settingsData == null)
             {
-                Debug.LogWarning("SettingsData reference is not assigned. Cannot save settings.");
+                Debug.LogWarning("SettingsData reference is not assigned. Cannot save settings data.");
                 return;
             }
 
             string json = JsonUtility.ToJson(_settingsData, prettyPrint: false);
-            PlayerPrefs.SetString(_settingsPrefsKey, json);
-            PlayerPrefs.Save();
+            byte[] bytes = SerializeFromJson(json);
 
-            Debug.Log("Settings data saved to PlayerPrefs.");
+            // NOTE: SettingsData is never encrypted, even if _useEncryption is true.
+
+            SetDirectory(_settingsDataPath);
+            File.WriteAllBytes(_settingsDataPath, bytes);
+
+            Debug.Log("Settings data saved.");
         }
 
         public void ResetSettingsData()
