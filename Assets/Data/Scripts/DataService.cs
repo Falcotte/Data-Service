@@ -16,11 +16,11 @@ namespace AngryKoala.Data
         public PlayerData PlayerData => _playerData;
 
         [SerializeField] private GameData _defaultGameData;
-        
+
         [SerializeField] private GameData _gameData;
-        
+
         public GameData GameData => _gameData;
-        
+
         [SerializeField] private SettingsData _defaultSettingsData;
 
         [SerializeField] private SettingsData _settingsData;
@@ -33,17 +33,17 @@ namespace AngryKoala.Data
 
         [SerializeField] private string _encryptionPassword = "Password";
 
-        private string _dataPath => Application.persistentDataPath;
+        private string _dataPath => Path.Combine(Application.persistentDataPath, "Data");
 
         private string _playerDataPath =>
-            Path.Combine(Application.persistentDataPath, "PlayerData.dat");
-        
+            Path.Combine(_dataPath, "PlayerData.dat");
+
         private string _gameDataPath =>
-            Path.Combine(Application.persistentDataPath, "GameData.dat");
+            Path.Combine(_dataPath, "GameData.dat");
 
         private string _settingsDataPath =>
-            Path.Combine(Application.persistentDataPath, "SettingsData.dat");
-        
+            Path.Combine(_dataPath, "SettingsData.dat");
+
         private static readonly byte[] _saltBytes = Encoding.UTF8.GetBytes("AngryKoala_Data_Salt");
 
         protected override void Awake()
@@ -160,7 +160,7 @@ namespace AngryKoala.Data
 
             Debug.Log("Player data reset to initial defaults and saved.");
         }
-        
+
         public void LoadGameData()
         {
             if (!File.Exists(_gameDataPath))
@@ -172,7 +172,7 @@ namespace AngryKoala.Data
 
                 return;
             }
-            
+
             if (_gameData == null)
             {
                 Debug.LogWarning("GameData reference is not assigned. Cannot load game data.");
@@ -206,7 +206,7 @@ namespace AngryKoala.Data
 
             Debug.Log("Game data loaded.");
         }
-        
+
         private void ApplyDefaultGameData()
         {
             if (_defaultGameData == null)
@@ -255,7 +255,7 @@ namespace AngryKoala.Data
 
             Debug.Log("Game data saved.");
         }
-        
+
         public void ResetGameData()
         {
             ApplyDefaultGameData();
@@ -263,7 +263,7 @@ namespace AngryKoala.Data
 
             Debug.Log("Game data reset to initial defaults and saved.");
         }
-        
+
         public void LoadSettingsData()
         {
             if (!File.Exists(_settingsDataPath))
@@ -297,7 +297,7 @@ namespace AngryKoala.Data
 
             Debug.Log("Settings data loaded.");
         }
-        
+
         private void ApplyDefaultSettingsData()
         {
             if (_defaultSettingsData == null)
@@ -395,7 +395,7 @@ namespace AngryKoala.Data
                 }
             }
         }
-        
+
         private void SetDirectory(string path)
         {
             string directory = Path.GetDirectoryName(path);
@@ -405,7 +405,7 @@ namespace AngryKoala.Data
                 Directory.CreateDirectory(directory);
             }
         }
-        
+
         private byte[] Decrypt(byte[] cipherBytes)
         {
             if (string.IsNullOrEmpty(_encryptionPassword))
