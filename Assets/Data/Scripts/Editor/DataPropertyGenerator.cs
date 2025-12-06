@@ -286,7 +286,8 @@ public partial class SROptions
             SRDebuggerOptionSettings settings) where TData : ScriptableObject
         {
             string dataTypeName = typeof(TData).Name;
-
+            string srPropertyName = dataTypeName + propertyName;
+            
             if (!string.IsNullOrEmpty(settings.Category))
             {
                 builder.AppendLine($"    [Category(\"{SanitizeAttributeString(settings.Category)}\")]");
@@ -331,7 +332,7 @@ public partial class SROptions
             string dataServiceAccessor = $"DataService.{dataTypeName}";
             string typeName = GetTypeName(fieldType);
 
-            builder.AppendLine($"    public {typeName} {propertyName}");
+            builder.AppendLine($"    public {typeName} {srPropertyName}");
             builder.AppendLine("    {");
             builder.AppendLine($"        get => {dataServiceAccessor}.{propertyName};");
             builder.AppendLine($"        set => {dataServiceAccessor}.{propertyName} = value;");
