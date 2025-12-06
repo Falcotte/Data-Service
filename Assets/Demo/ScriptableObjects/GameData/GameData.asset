@@ -17,7 +17,7 @@ MonoBehaviour:
   _srDebuggerOptions:
   - _propertyName: MaxLifeCount
     _settings:
-      _enabled: 0
+      _enabled: 1
       _category: Game Data
       _displayName: Max Life Count
       _sort: 0

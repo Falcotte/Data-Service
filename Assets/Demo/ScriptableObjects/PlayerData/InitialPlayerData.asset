@@ -28,7 +28,7 @@ MonoBehaviour:
       _increment: 0
   - _propertyName: Score
     _settings:
-      _enabled: 0
+      _enabled: 1
       _category: Player Data
       _displayName: Score
       _sort: 1

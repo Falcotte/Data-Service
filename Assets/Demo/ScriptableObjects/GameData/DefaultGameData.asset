@@ -28,7 +28,7 @@ MonoBehaviour:
       _increment: 0
   - _propertyName: LifeReplenishDuration
     _settings:
-      _enabled: 0
+      _enabled: 1
       _category: Game Data
       _displayName: Life Replenish Duration
       _sort: 1

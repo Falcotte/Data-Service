@@ -12,12 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 46051ec88f1cd3745a47f257a9f111a2, type: 3}
   m_Name: PlayerData
   m_EditorClassIdentifier: 
-  _level: 0
+  _level: 1
   _score: 0
   _srDebuggerOptions:
   - _propertyName: Level
     _settings:
-      _enabled: 0
+      _enabled: 1
       _category: Player Data
       _displayName: Level
       _sort: 0
