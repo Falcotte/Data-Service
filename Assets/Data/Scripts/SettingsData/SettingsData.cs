@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AngryKoala.Data
@@ -8,5 +9,16 @@ namespace AngryKoala.Data
         [SerializeField] private bool _musicEnabled = true;
         [SerializeField] private bool _soundEnabled = true;
         [SerializeField] private bool _vibrationEnabled = true;
+
+        [SerializeField] [HideInInspector] private List<SRDataOptionEntry> _srDataOptions = new();
+
+        public List<SRDataOptionEntry> SRDataOptions => _srDataOptions;
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            SRDataOptionsUtility.SyncOptionsForDataObject(this, _srDataOptions);
+        }
+#endif
     }
 }

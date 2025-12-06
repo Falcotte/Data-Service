@@ -10,36 +10,36 @@ namespace AngryKoala.Data
 {
     public static class DataPropertyGenerator
     {
-        private const string _playerDataGeneratedFileName = "PlayerData.Properties.Generated.cs";
-        private const string _gameDataGeneratedFileName = "GameData.Properties.Generated.cs";
-        private const string _settingsDataGeneratedFileName = "SettingsData.Properties.Generated.cs";
+        private const string _playerDataPropertiesFileName = "PlayerData.Properties.Generated.cs";
+        private const string _gameDataPropertiesFileName = "GameData.Properties.Generated.cs";
+        private const string _settingsDataPropertiesFileName = "SettingsData.Properties.Generated.cs";
 
-        [MenuItem("Angry Koala/Data/Generate PlayerData Properties", false, 0)]
-        private static void GeneratePlayerDataProperties()
+        private const string _playerDataSROptionsFileName = "PlayerData.SROptions.Generated.cs";
+        private const string _gameDataSROptionsFileName = "GameData.SROptions.Generated.cs";
+        private const string _settingsDataSROptionsFileName = "SettingsData.SROptions.Generated.cs";
+
+        [MenuItem("Angry Koala/Data/Generate PlayerData", priority = 0)]
+        private static void GeneratePlayerData()
         {
-            GenerateProperties<PlayerData>(
-                _playerDataGeneratedFileName,
-                "PlayerDataPropertyGenerator");
+            GenerateData<PlayerData>(_playerDataPropertiesFileName, _playerDataSROptionsFileName,
+                "DataPropertyGenerator - PlayerData");
         }
 
-        [MenuItem("Angry Koala/Data/Generate GameData Properties", false, 1)]
-        private static void GenerateGameDataProperties()
+        [MenuItem("Angry Koala/Data/Generate GameData", priority = 1)]
+        private static void GenerateGameData()
         {
-            GenerateProperties<GameData>(
-                _gameDataGeneratedFileName,
-                "GameDataPropertyGenerator");
-        }
-        
-        [MenuItem("Angry Koala/Data/Generate SettingsData Properties", false, 2)]
-        private static void GenerateSettingsDataProperties()
-        {
-            GenerateProperties<SettingsData>(
-                _settingsDataGeneratedFileName,
-                "DataPropertyGenerator (SettingsData)");
+            GenerateData<GameData>(_gameDataPropertiesFileName, _gameDataSROptionsFileName,
+                "DataPropertyGenerator - GameData");
         }
 
-        private static void GenerateProperties<TData>(
-            string generatedFileName,
+        [MenuItem("Angry Koala/Data/Generate SettingsData", priority = 2)]
+        private static void GenerateSettingsData()
+        {
+            GenerateData<SettingsData>(_settingsDataPropertiesFileName, _settingsDataSROptionsFileName,
+                "DataPropertyGenerator - SettingsData");
+        }
+
+        private static void GenerateData<TData>(string propertiesFileName, string srOptionsFileName,
             string generatorName) where TData : ScriptableObject
         {
             Type dataType = typeof(TData);
@@ -47,7 +47,11 @@ namespace AngryKoala.Data
             FieldInfo[] fields = dataType.GetFields(
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
+            Dictionary<string, SRDataOptionSettings> optionsByPropertyName =
+                GetSROptionsForData<TData>();
+            
             StringBuilder propertiesBuilder = new StringBuilder();
+            StringBuilder srOptionsBuilder = new StringBuilder();
 
             foreach (FieldInfo field in fields)
             {
@@ -61,17 +65,26 @@ namespace AngryKoala.Data
                     continue;
                 }
 
+                if (field.GetCustomAttribute<HideInInspector>() != null)
+                {
+                    continue;
+                }
+
                 string fieldName = field.Name;
 
                 if (fieldName.StartsWith("<", StringComparison.Ordinal) ||
-                    fieldName.StartsWith("m_", StringComparison.Ordinal) ||
-                    field.GetCustomAttribute<HideInInspector>() != null)
+                    fieldName.StartsWith("m_", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (string.Equals(fieldName, "_srDataOptions", StringComparison.Ordinal))
                 {
                     continue;
                 }
 
                 string propertyName = GetPropertyName(fieldName);
-                string typeName = GetFriendlyTypeName(field.FieldType);
+                string typeName = GetTypeName(field.FieldType);
 
                 propertiesBuilder.AppendLine($"        public {typeName} {propertyName}");
                 propertiesBuilder.AppendLine("        {");
@@ -79,20 +92,18 @@ namespace AngryKoala.Data
                 propertiesBuilder.AppendLine($"            set => {fieldName} = value;");
                 propertiesBuilder.AppendLine("        }");
                 propertiesBuilder.AppendLine();
+
+                if (optionsByPropertyName.TryGetValue(propertyName, out SRDataOptionSettings settings) &&
+                    settings.Enabled)
+                {
+                    AppendSROptionsProperty<TData>(srOptionsBuilder, field.FieldType, propertyName, settings);
+                }
             }
 
             string propertiesBlock = propertiesBuilder.ToString().TrimEnd();
-
-            if (string.IsNullOrEmpty(propertiesBlock))
-            {
-                Debug.LogWarning(
-                    $"No matching [SerializeField] private fields found on {dataType.Name} to generate properties for.");
-                return;
-            }
-
             string namespaceName = dataType.Namespace ?? "AngryKoala.Data";
 
-            string generatedCode = $@"using System;
+            string generatedPropertiesCode = $@"using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -108,7 +119,118 @@ namespace {namespaceName}
     }}
 }}";
 
-            WriteGeneratedFile<TData>(generatedFileName, generatedCode);
+            WriteGeneratedFile<TData>(propertiesFileName, generatedPropertiesCode);
+
+            string srOptionsProperties = srOptionsBuilder.ToString().TrimEnd();
+
+            string generatedSROptionsCode = $@"#if SRDEBUGGER
+
+using System.ComponentModel;
+using AngryKoala.Data;
+using AngryKoala.Services;
+using SRDebugger;
+
+/// <summary>
+/// This class is generated by {generatorName}.
+/// Any changes may be overwritten.
+/// </summary>
+public partial class SROptions
+{{
+{srOptionsProperties}
+}}
+
+#endif";
+
+#if SRDEBUGGER
+            WriteGeneratedFile<TData>(srOptionsFileName, generatedSROptionsCode);
+#else
+            TData tempInstance = ScriptableObject.CreateInstance<TData>();
+            MonoScript monoScript = MonoScript.FromScriptableObject(tempInstance);
+            UnityEngine.Object.DestroyImmediate(tempInstance);
+
+            string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(monoScript));
+            string path = Path.Combine(directory, srOptionsFileName);
+
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                AssetDatabase.Refresh();
+            }
+#endif
+        }
+        
+        private static Dictionary<string, SRDataOptionSettings> GetSROptionsForData<TData>()
+            where TData : ScriptableObject
+        {
+            Dictionary<string, SRDataOptionSettings> result =
+                new Dictionary<string, SRDataOptionSettings>(StringComparer.Ordinal);
+
+            string[] guids = AssetDatabase.FindAssets($"t:{typeof(TData).Name}");
+            if (guids == null || guids.Length == 0)
+            {
+                return result;
+            }
+
+            Array.Sort(guids, StringComparer.Ordinal);
+
+            foreach (string guid in guids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                TData dataAsset = AssetDatabase.LoadAssetAtPath<TData>(assetPath);
+
+                if (dataAsset == null)
+                {
+                    continue;
+                }
+
+                FieldInfo optionsField = typeof(TData).GetField(
+                    "_srDataOptions",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+                if (optionsField == null)
+                {
+                    continue;
+                }
+
+                if (optionsField.GetValue(dataAsset) is not List<SRDataOptionEntry> entries)
+                {
+                    continue;
+                }
+
+                foreach (SRDataOptionEntry entry in entries)
+                {
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    SRDataOptionSettings settings = entry.Settings;
+                    if (settings == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrEmpty(entry.PropertyName))
+                    {
+                        continue;
+                    }
+
+                    string propertyName = entry.PropertyName;
+
+                    if (!result.TryGetValue(propertyName, out SRDataOptionSettings existing))
+                    {
+                        result[propertyName] = settings;
+                        continue;
+                    }
+
+                    if (!existing.Enabled && settings.Enabled)
+                    {
+                        result[propertyName] = settings;
+                    }
+                }
+            }
+
+            return result;
         }
 
         private static string GetPropertyName(string fieldName)
@@ -128,17 +250,15 @@ namespace {namespaceName}
             return char.ToUpperInvariant(cleanedFieldName[0]) + cleanedFieldName.Substring(1);
         }
 
-        private static string GetFriendlyTypeName(Type type)
+        private static string GetTypeName(Type type)
         {
-            // Arrays
             if (type.IsArray)
             {
                 Type elementType = type.GetElementType();
-                string elementName = GetFriendlyTypeName(elementType);
+                string elementName = GetTypeName(elementType);
                 return $"{elementName}[]";
             }
 
-            // C# keyword aliases
             if (type == typeof(int)) return "int";
             if (type == typeof(float)) return "float";
             if (type == typeof(bool)) return "bool";
@@ -153,45 +273,26 @@ namespace {namespaceName}
             if (type == typeof(ushort)) return "ushort";
             if (type == typeof(decimal)) return "decimal";
 
-            // UnityEngine types – short name is fine with using UnityEngine;
             if (type.Namespace == "UnityEngine")
             {
                 return type.Name;
             }
 
-            // Generic types (List<>, Dictionary<,>, HashSet<>, etc.)
             if (type.IsGenericType)
             {
                 Type genericDefinition = type.GetGenericTypeDefinition();
                 Type[] genericArguments = type.GetGenericArguments();
 
-                string genericTypeName;
-
-                if (genericDefinition == typeof(List<>))
-                {
-                    genericTypeName = "List";
-                }
-                else if (genericDefinition == typeof(Dictionary<,>))
-                {
-                    genericTypeName = "Dictionary";
-                }
-                else if (genericDefinition == typeof(HashSet<>))
-                {
-                    genericTypeName = "HashSet";
-                }
-                else
-                {
-                    string rawName = genericDefinition.Name;
-                    int backtickIndex = rawName.IndexOf('`');
-                    genericTypeName = backtickIndex >= 0
-                        ? rawName.Substring(0, backtickIndex)
-                        : rawName;
-                }
+                string rawName = genericDefinition.Name;
+                int backtickIndex = rawName.IndexOf('`');
+                string genericTypeName = backtickIndex >= 0
+                    ? rawName.Substring(0, backtickIndex)
+                    : rawName;
 
                 string[] genericArgumentNames = new string[genericArguments.Length];
                 for (int i = 0; i < genericArguments.Length; i++)
                 {
-                    genericArgumentNames[i] = GetFriendlyTypeName(genericArguments[i]);
+                    genericArgumentNames[i] = GetTypeName(genericArguments[i]);
                 }
 
                 return $"{genericTypeName}<{string.Join(", ", genericArgumentNames)}>";
@@ -200,9 +301,76 @@ namespace {namespaceName}
             return type.Name;
         }
 
-        private static void WriteGeneratedFile<TData>(
-            string generatedFileName,
-            string code) where TData : ScriptableObject
+        private static void AppendSROptionsProperty<TData>(StringBuilder builder, Type fieldType, string propertyName,
+            SRDataOptionSettings settings) where TData : ScriptableObject
+        {
+            string dataTypeName = typeof(TData).Name;
+            string srPropertyName = dataTypeName + propertyName;
+            
+            if (!string.IsNullOrEmpty(settings.Category))
+            {
+                builder.AppendLine($"    [Category(\"{SanitizeAttributeString(settings.Category)}\")]");
+            }
+
+            if (!string.IsNullOrEmpty(settings.DisplayName))
+            {
+                builder.AppendLine($"    [DisplayName(\"{SanitizeAttributeString(settings.DisplayName)}\")]");
+            }
+
+            if (settings.Sort != 0)
+            {
+                builder.AppendLine($"    [Sort({settings.Sort})]");
+            }
+
+            bool isNumeric =
+                fieldType == typeof(int) ||
+                fieldType == typeof(uint) ||
+                fieldType == typeof(short) ||
+                fieldType == typeof(ushort) ||
+                fieldType == typeof(byte) ||
+                fieldType == typeof(sbyte) ||
+                fieldType == typeof(float) ||
+                fieldType == typeof(double);
+
+            if (isNumeric && settings.NumberRange != null && settings.NumberRange.Enabled)
+            {
+                string minString = settings.NumberRange.Min.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                string maxString = settings.NumberRange.Max.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                builder.AppendLine($"    [NumberRange({minString}, {maxString})]");
+            }
+
+            if (isNumeric && Math.Abs(settings.Increment) > double.Epsilon &&
+                Math.Abs(settings.Increment - 1d) > double.Epsilon)
+            {
+                string incrementString = settings.Increment.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                builder.AppendLine($"    [Increment({incrementString})]");
+            }
+
+            string dataServiceAccessor = $"DataService.{dataTypeName}";
+            string typeName = GetTypeName(fieldType);
+
+            builder.AppendLine($"    public {typeName} {srPropertyName}");
+            builder.AppendLine("    {");
+            builder.AppendLine($"        get => {dataServiceAccessor}.{propertyName};");
+            builder.AppendLine($"        set => {dataServiceAccessor}.{propertyName} = value;");
+            builder.AppendLine("    }");
+            builder.AppendLine();
+        }
+
+        private static string SanitizeAttributeString(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        private static void WriteGeneratedFile<TData>(string generatedFileName, string code)
+            where TData : ScriptableObject
         {
             TData tempInstance = ScriptableObject.CreateInstance<TData>();
             MonoScript monoScript = MonoScript.FromScriptableObject(tempInstance);

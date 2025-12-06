@@ -54,8 +54,20 @@ namespace AngryKoala.Data
             {
                 throw new InvalidOperationException("PlayerData reference is not assigned.");
             }
+            
+            if (_gameData == null)
+            {
+                throw new InvalidOperationException("GameData reference is not assigned.");
+            }
+            
+            if (_settingsData == null)
+            {
+                throw new InvalidOperationException("SettingsData reference is not assigned.");
+            }
 
             LoadPlayerData();
+            LoadGameData();
+            LoadSettingsData();
         }
 
         public void LoadPlayerData()
