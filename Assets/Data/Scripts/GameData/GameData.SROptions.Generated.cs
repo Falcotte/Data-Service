@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿#if SRDEBUGGER
+
+using System.ComponentModel;
 using AngryKoala.Data;
 using AngryKoala.Services;
 using SRDebugger;
@@ -10,19 +12,13 @@ using SRDebugger;
 public partial class SROptions
 {
     [Category("Game Data")]
-    [DisplayName("Max Life Count")]
-    public int MaxLifeCount
-    {
-        get => DataService.GameData.MaxLifeCount;
-        set => DataService.GameData.MaxLifeCount = value;
-    }
-
-    [Category("Game Data")]
     [DisplayName("Life Replenish Duration")]
     [Sort(1)]
-    public int LifeReplenishDuration
+    public int GameDataLifeReplenishDuration
     {
         get => DataService.GameData.LifeReplenishDuration;
         set => DataService.GameData.LifeReplenishDuration = value;
     }
 }
+
+#endif

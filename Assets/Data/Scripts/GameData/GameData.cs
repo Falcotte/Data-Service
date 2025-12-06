@@ -11,14 +11,14 @@ namespace AngryKoala.Data
         // In minutes
         [SerializeField] private int _lifeReplenishDuration;
 
-        [SerializeField] private List<SRDebuggerOptionEntry> _srDebuggerOptions = new();
+        [SerializeField] [HideInInspector] private List<SRDataOptionEntry> _srDataOptions = new();
 
-        public List<SRDebuggerOptionEntry> SrDebuggerOptions => _srDebuggerOptions;
+        public List<SRDataOptionEntry> SRDataOptions => _srDataOptions;
 
 #if UNITY_EDITOR
         private void OnValidate()
         {
-            SRDataOptionsUtility.SyncOptionsForDataObject(this, _srDebuggerOptions);
+            SRDataOptionsUtility.SyncOptionsForDataObject(this, _srDataOptions);
         }
 #endif
     }

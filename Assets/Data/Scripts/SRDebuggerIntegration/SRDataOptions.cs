@@ -1,7 +1,7 @@
-using System.ComponentModel;
+#if SRDEBUGGER
+
 using AngryKoala.Data;
 using AngryKoala.Services;
-using SRDebugger;
 
 public partial class SROptions
 {
@@ -20,3 +20,5 @@ public partial class SROptions
         }
     }
 }
+
+#endif

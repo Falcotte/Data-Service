@@ -24,7 +24,7 @@ namespace AngryKoala.Data
 
         public static void SyncOptionsForDataObject(
             ScriptableObject data,
-            List<SRDebuggerOptionEntry> entries)
+            List<SRDataOptionEntry> entries)
         {
             if (data == null || entries == null)
             {
@@ -69,14 +69,14 @@ namespace AngryKoala.Data
                 string propertyName = GetPropertyName(field.Name);
                 validPropertyNames.Add(propertyName);
 
-                SRDebuggerOptionEntry entry = entries.Find(e =>
+                SRDataOptionEntry entry = entries.Find(e =>
                     string.Equals(e.PropertyName, propertyName, StringComparison.Ordinal));
 
                 bool isNewEntry = false;
 
                 if (entry == null)
                 {
-                    entry = new SRDebuggerOptionEntry
+                    entry = new SRDataOptionEntry
                     {
                         PropertyName = propertyName
                     };
@@ -147,17 +147,17 @@ namespace AngryKoala.Data
         }
 
         private static void EnsureEntryDefaults(
-            SRDebuggerOptionEntry entry,
+            SRDataOptionEntry entry,
             string dataTypeName,
             string propertyName,
             int orderIndex,
             bool isNewEntry)
         {
-            SRDebuggerOptionSettings settings = entry.Settings;
+            SRDataOptionSettings settings = entry.Settings;
 
             if (settings == null)
             {
-                settings = new SRDebuggerOptionSettings();
+                settings = new SRDataOptionSettings();
                 entry.Settings = settings;
             }
 
@@ -195,7 +195,7 @@ namespace AngryKoala.Data
                 return;
             }
 
-            if (optionsField.GetValue(data) is not List<SRDebuggerOptionEntry> entries ||
+            if (optionsField.GetValue(data) is not List<SRDataOptionEntry> entries ||
                 entries == null)
             {
                 return;
@@ -235,7 +235,7 @@ namespace AngryKoala.Data
 
                 string propertyName = GetPropertyName(field.Name);
 
-                SRDebuggerOptionEntry entry = entries.Find(e =>
+                SRDataOptionEntry entry = entries.Find(e =>
                     string.Equals(e.PropertyName, propertyName, StringComparison.Ordinal));
 
                 if (entry != null && entry.Settings != null)

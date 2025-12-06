@@ -4,11 +4,11 @@ using UnityEngine;
 namespace AngryKoala.Data
 {
     [Serializable]
-    public class SRDebuggerOptionEntry
+    public class SRDataOptionEntry
     {
         [SerializeField] private string _propertyName;
 
-        [SerializeField] private SRDebuggerOptionSettings _settings = new();
+        [SerializeField] private SRDataOptionSettings _settings = new();
 
         public string PropertyName
         {
@@ -16,7 +16,7 @@ namespace AngryKoala.Data
             set => _propertyName = value;
         }
 
-        public SRDebuggerOptionSettings Settings
+        public SRDataOptionSettings Settings
         {
             get => _settings;
             set => _settings = value;

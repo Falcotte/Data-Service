@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _level: 0
   _score: 0
-  _srDebuggerOptions:
+  _srDataOptions:
   - _propertyName: Level
     _settings:
       _enabled: 0
@@ -24,16 +24,16 @@ MonoBehaviour:
       _numberRange:
         _enabled: 0
         _min: 0
-        _max: 0
-      _increment: 0
+        _max: 1
+      _increment: 1
   - _propertyName: Score
     _settings:
-      _enabled: 1
+      _enabled: 0
       _category: Player Data
       _displayName: Score
       _sort: 1
       _numberRange:
         _enabled: 0
         _min: 0
-        _max: 0
-      _increment: 0
+        _max: 1
+      _increment: 1

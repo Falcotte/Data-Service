@@ -47,9 +47,9 @@ namespace AngryKoala.Data
             FieldInfo[] fields = dataType.GetFields(
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
-            Dictionary<string, SRDebuggerOptionSettings> optionsByPropertyName =
+            Dictionary<string, SRDataOptionSettings> optionsByPropertyName =
                 GetSROptionsForData<TData>();
-
+            
             StringBuilder propertiesBuilder = new StringBuilder();
             StringBuilder srOptionsBuilder = new StringBuilder();
 
@@ -78,7 +78,7 @@ namespace AngryKoala.Data
                     continue;
                 }
 
-                if (string.Equals(fieldName, "_srDebuggerOptions", StringComparison.Ordinal))
+                if (string.Equals(fieldName, "_srDataOptions", StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -93,7 +93,7 @@ namespace AngryKoala.Data
                 propertiesBuilder.AppendLine("        }");
                 propertiesBuilder.AppendLine();
 
-                if (optionsByPropertyName.TryGetValue(propertyName, out SRDebuggerOptionSettings settings) &&
+                if (optionsByPropertyName.TryGetValue(propertyName, out SRDataOptionSettings settings) &&
                     settings.Enabled)
                 {
                     AppendSROptionsProperty<TData>(srOptionsBuilder, field.FieldType, propertyName, settings);
@@ -123,7 +123,9 @@ namespace {namespaceName}
 
             string srOptionsProperties = srOptionsBuilder.ToString().TrimEnd();
 
-            string generatedSROptionsCode = $@"using System.ComponentModel;
+            string generatedSROptionsCode = $@"#if SRDEBUGGER
+
+using System.ComponentModel;
 using AngryKoala.Data;
 using AngryKoala.Services;
 using SRDebugger;
@@ -135,16 +137,33 @@ using SRDebugger;
 public partial class SROptions
 {{
 {srOptionsProperties}
-}}";
+}}
 
+#endif";
+
+#if SRDEBUGGER
             WriteGeneratedFile<TData>(srOptionsFileName, generatedSROptionsCode);
-        }
+#else
+            TData tempInstance = ScriptableObject.CreateInstance<TData>();
+            MonoScript monoScript = MonoScript.FromScriptableObject(tempInstance);
+            UnityEngine.Object.DestroyImmediate(tempInstance);
 
-        private static Dictionary<string, SRDebuggerOptionSettings> GetSROptionsForData<TData>()
+            string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(monoScript));
+            string path = Path.Combine(directory, srOptionsFileName);
+
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                AssetDatabase.Refresh();
+            }
+#endif
+        }
+        
+        private static Dictionary<string, SRDataOptionSettings> GetSROptionsForData<TData>()
             where TData : ScriptableObject
         {
-            Dictionary<string, SRDebuggerOptionSettings> result =
-                new Dictionary<string, SRDebuggerOptionSettings>(StringComparer.Ordinal);
+            Dictionary<string, SRDataOptionSettings> result =
+                new Dictionary<string, SRDataOptionSettings>(StringComparer.Ordinal);
 
             string[] guids = AssetDatabase.FindAssets($"t:{typeof(TData).Name}");
             if (guids == null || guids.Length == 0)
@@ -165,7 +184,7 @@ public partial class SROptions
                 }
 
                 FieldInfo optionsField = typeof(TData).GetField(
-                    "_srDebuggerOptions",
+                    "_srDataOptions",
                     BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
                 if (optionsField == null)
@@ -173,19 +192,19 @@ public partial class SROptions
                     continue;
                 }
 
-                if (optionsField.GetValue(dataAsset) is not List<SRDebuggerOptionEntry> entries)
+                if (optionsField.GetValue(dataAsset) is not List<SRDataOptionEntry> entries)
                 {
                     continue;
                 }
 
-                foreach (SRDebuggerOptionEntry entry in entries)
+                foreach (SRDataOptionEntry entry in entries)
                 {
                     if (entry == null)
                     {
                         continue;
                     }
 
-                    SRDebuggerOptionSettings settings = entry.Settings;
+                    SRDataOptionSettings settings = entry.Settings;
                     if (settings == null)
                     {
                         continue;
@@ -198,7 +217,7 @@ public partial class SROptions
 
                     string propertyName = entry.PropertyName;
 
-                    if (!result.TryGetValue(propertyName, out SRDebuggerOptionSettings existing))
+                    if (!result.TryGetValue(propertyName, out SRDataOptionSettings existing))
                     {
                         result[propertyName] = settings;
                         continue;
@@ -283,7 +302,7 @@ public partial class SROptions
         }
 
         private static void AppendSROptionsProperty<TData>(StringBuilder builder, Type fieldType, string propertyName,
-            SRDebuggerOptionSettings settings) where TData : ScriptableObject
+            SRDataOptionSettings settings) where TData : ScriptableObject
         {
             string dataTypeName = typeof(TData).Name;
             string srPropertyName = dataTypeName + propertyName;

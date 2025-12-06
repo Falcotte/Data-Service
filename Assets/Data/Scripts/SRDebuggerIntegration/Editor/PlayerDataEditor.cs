@@ -1,3 +1,5 @@
+#if UNITY_EDITOR && SRDEBUGGER
+
 using UnityEditor;
 
 namespace AngryKoala.Data
@@ -7,3 +9,5 @@ namespace AngryKoala.Data
     {
     }
 }
+
+#endif

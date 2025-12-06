@@ -1,3 +1,5 @@
+#if UNITY_EDITOR && SRDEBUGGER
+
 using System;
 using UnityEditor;
 using UnityEngine;
@@ -12,7 +14,7 @@ namespace AngryKoala.Data
         private void OnEnable()
         {
             _scriptProperty = serializedObject.FindProperty("m_Script");
-            _srOptionsProperty = serializedObject.FindProperty("_srDebuggerOptions");
+            _srOptionsProperty = serializedObject.FindProperty("_srDataOptions");
         }
 
         public override void OnInspectorGUI()
@@ -34,7 +36,7 @@ namespace AngryKoala.Data
                 enterChildren = false;
 
                 if (iterator.propertyPath == "m_Script" ||
-                    iterator.propertyPath == "_srDebuggerOptions")
+                    iterator.propertyPath == "_srDataOptions")
                 {
                     continue;
                 }
@@ -199,3 +201,5 @@ namespace AngryKoala.Data
         }
     }
 }
+
+#endif

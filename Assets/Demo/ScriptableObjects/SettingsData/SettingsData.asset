@@ -15,7 +15,7 @@ MonoBehaviour:
   _musicEnabled: 1
   _soundEnabled: 1
   _vibrationEnabled: 1
-  _srDebuggerOptions:
+  _srDataOptions:
   - _propertyName: MusicEnabled
     _settings:
       _enabled: 0
@@ -25,8 +25,8 @@ MonoBehaviour:
       _numberRange:
         _enabled: 0
         _min: 0
-        _max: 0
-      _increment: 0
+        _max: 1
+      _increment: 1
   - _propertyName: SoundEnabled
     _settings:
       _enabled: 0
@@ -36,8 +36,8 @@ MonoBehaviour:
       _numberRange:
         _enabled: 0
         _min: 0
-        _max: 0
-      _increment: 0
+        _max: 1
+      _increment: 1
   - _propertyName: VibrationEnabled
     _settings:
       _enabled: 0
@@ -47,5 +47,5 @@ MonoBehaviour:
       _numberRange:
         _enabled: 0
         _min: 0
-        _max: 0
-      _increment: 0
+        _max: 1
+      _increment: 1
