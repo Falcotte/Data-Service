@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a96a5ac34c1cf74b81a0e76261b3c2c, type: 3}
+  m_Name: GameData
+  m_EditorClassIdentifier: Assembly-CSharp::AngryKoala.Data.Demo.GameData
+  _srDataOptions:
+  - _propertyName: MaxLifeCount
+    _settings:
+      _enabled: 1
+      _category: Game Data
+      _displayName: Max Life Count
+      _sort: 0
+      _numberRange:
+        _enabled: 1
+        _min: 1
+        _max: 10
+      _increment: 1
+  - _propertyName: LifeReplenishDuration
+    _settings:
+      _enabled: 0
+      _category: Game Data
+      _displayName: Life Replenish Duration
+      _sort: 1
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  _maxLifeCount: 5
+  _lifeReplenishDuration: 30

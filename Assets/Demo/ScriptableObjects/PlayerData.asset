@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8dc6ccb507d9cf4ab9dc8859ded385f, type: 3}
+  m_Name: PlayerData
+  m_EditorClassIdentifier: Assembly-CSharp::AngryKoala.Data.Demo.PlayerData
+  _srDataOptions:
+  - _propertyName: Level
+    _settings:
+      _enabled: 1
+      _category: Player Data
+      _displayName: Level
+      _sort: 0
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  - _propertyName: Score
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Score
+      _sort: 1
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  - _propertyName: Lives
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Lives
+      _sort: 2
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  - _propertyName: Currency
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Currency
+      _sort: 3
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  _level: 1
+  _score: 0
+  _lives: 5
+  _currency: 0

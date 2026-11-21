@@ -1,472 +1,430 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using AngryKoala.Services;
 using UnityEngine;
 
 namespace AngryKoala.Data
 {
-    public class DataService : BaseService<IDataService>, IDataService
+    public sealed class DataService : BaseService<IDataService>, IDataService
     {
-        [SerializeField] private PlayerData _initialPlayerData;
+        [SerializeField] [Tooltip("One asset per data class. Each asset holds the defaults of its class.")]
+        private List<DataContainer> _containers = new();
 
-        [SerializeField] private PlayerData _playerData;
+        internal List<DataContainer> ContainerAssets => _containers;
 
-        public PlayerData PlayerData => _playerData;
+        [SerializeField] [Tooltip("Text the key for obfuscated containers is made from.")]
+        private string _obfuscationKey;
 
-        [SerializeField] private GameData _defaultGameData;
+        internal string ObfuscationKey
+        {
+            get => _obfuscationKey;
+            set => _obfuscationKey = value;
+        }
 
-        [SerializeField] private GameData _gameData;
+        [SerializeField] [Tooltip("Save changed containers when the app is paused, quits or the service is destroyed.")]
+        private bool _saveOnPause = true;
 
-        public GameData GameData => _gameData;
+        internal bool SaveOnPause
+        {
+            get => _saveOnPause;
+            set => _saveOnPause = value;
+        }
 
-        [SerializeField] private SettingsData _defaultSettingsData;
+        [SerializeField] [Tooltip("Log every load and save.")]
+        private bool _verbose;
 
-        [SerializeField] private SettingsData _settingsData;
+        internal string FolderPath
+        {
+            get => _folderPath ?? DefaultFolderPath;
+            set => _folderPath = value;
+        }
 
-        public SettingsData SettingsData => _settingsData;
+        internal bool IsDevelopmentBuild
+        {
+            get => _isDevelopmentBuild ?? Debug.isDebugBuild;
+            set => _isDevelopmentBuild = value;
+        }
 
-        [SerializeField] private DataSerializationFormat _serializationFormat = DataSerializationFormat.Json;
+        internal static string DefaultFolderPath => Path.Combine(Application.persistentDataPath, _folderName);
 
-        [SerializeField] private bool _useEncryption = false;
+        private readonly List<DataContainerSlot> _slots = new();
+        private readonly Dictionary<Type, DataContainerSlot> _slotsByType = new();
+        private readonly HashSet<string> _fileNames = new(StringComparer.OrdinalIgnoreCase);
 
-        [SerializeField] private string _encryptionPassword = "Password";
+        private DataStorage _storage;
 
-        private string _dataPath => Path.Combine(Application.persistentDataPath, "Data");
+        private string _folderPath;
+        private bool? _isDevelopmentBuild;
 
-        private string _playerDataPath =>
-            Path.Combine(_dataPath, "PlayerData.dat");
-
-        private string _gameDataPath =>
-            Path.Combine(_dataPath, "GameData.dat");
-
-        private string _settingsDataPath =>
-            Path.Combine(_dataPath, "SettingsData.dat");
-
-        private static readonly byte[] _saltBytes = Encoding.UTF8.GetBytes("AngryKoala_Data_Salt");
+        private const string _folderName = "Data";
 
         protected override void Awake()
         {
+            if (IsSecondInstance())
+            {
+                Debug.LogError(
+                    "DataService: another data service is already registered. This one loads and saves nothing, " +
+                    "so that two services cannot write over each other's files.", this);
+                return;
+            }
+
+            // Loading comes before registering, so that whoever finds the service finds it loaded.
+            LoadContainers();
+
             base.Awake();
-
-            if (_playerData == null)
-            {
-                throw new InvalidOperationException("PlayerData reference is not assigned.");
-            }
-            
-            if (_gameData == null)
-            {
-                throw new InvalidOperationException("GameData reference is not assigned.");
-            }
-            
-            if (_settingsData == null)
-            {
-                throw new InvalidOperationException("SettingsData reference is not assigned.");
-            }
-
-            LoadPlayerData();
-            LoadGameData();
-            LoadSettingsData();
         }
 
-        public void LoadPlayerData()
+        private bool IsSecondInstance()
         {
-            if (!File.Exists(_playerDataPath))
+            return _autoRegister && ServiceLocator.TryGet(out IDataService registeredService) &&
+                   !ReferenceEquals(registeredService, this);
+        }
+
+        private void LoadContainers()
+        {
+            _storage = new DataStorage(FolderPath, _obfuscationKey);
+
+            for (int i = 0; i < _containers.Count; i++)
             {
-                Debug.Log("Player data file not found. Applying initial data if available and saving.");
+                DataContainer source = _containers[i];
 
-                ApplyInitialPlayerData();
-                SavePlayerData();
-
-                return;
-            }
-
-            if (_playerData == null)
-            {
-                Debug.LogWarning("PlayerData reference is null. Cannot load player data.");
-                return;
-            }
-
-            byte[] bytes = File.ReadAllBytes(_playerDataPath);
-
-            if (bytes.Length == 0)
-            {
-                Debug.LogWarning("Player data file is empty.");
-                return;
-            }
-
-            if (_useEncryption)
-            {
-                try
+                if (source == null)
                 {
-                    bytes = Decrypt(bytes);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogError($"Failed to decrypt player data. {exception}");
-                    return;
-                }
-            }
-
-            string json = DeserializeToJson(bytes);
-
-            JsonUtility.FromJsonOverwrite(json, _playerData);
-
-            Debug.Log("Player data loaded.");
-        }
-
-        private void ApplyInitialPlayerData()
-        {
-            if (_initialPlayerData == null)
-            {
-                return;
-            }
-
-            if (_playerData == null)
-            {
-                Debug.LogWarning("PlayerData reference is null.");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(_initialPlayerData, prettyPrint: false);
-            JsonUtility.FromJsonOverwrite(json, _playerData);
-
-            Debug.Log("Initial player data applied.");
-        }
-
-        public void SavePlayerData()
-        {
-            if (_playerData == null)
-            {
-                Debug.LogWarning("PlayerData reference is null. Cannot save player data.");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(_playerData, prettyPrint: false);
-            byte[] bytes = SerializeFromJson(json);
-
-            if (_useEncryption && bytes.Length > 0)
-            {
-                try
-                {
-                    bytes = Encrypt(bytes);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogError($"Failed to encrypt player data. {exception}");
-                    return;
-                }
-            }
-
-            SetDirectory(_playerDataPath);
-            File.WriteAllBytes(_playerDataPath, bytes);
-
-            Debug.Log("Player data saved.");
-        }
-
-        public void ResetPlayerData()
-        {
-            ApplyInitialPlayerData();
-            SavePlayerData();
-
-            Debug.Log("Player data reset to initial defaults and saved.");
-        }
-
-        public void LoadGameData()
-        {
-            if (!File.Exists(_gameDataPath))
-            {
-                Debug.Log("Game data file not found. Applying default data if available and saving.");
-
-                ApplyDefaultGameData();
-                SaveGameData();
-
-                return;
-            }
-
-            if (_gameData == null)
-            {
-                Debug.LogWarning("GameData reference is not assigned. Cannot load game data.");
-                return;
-            }
-
-            byte[] bytes = File.ReadAllBytes(_gameDataPath);
-
-            if (bytes.Length == 0)
-            {
-                Debug.LogWarning("Game data file is empty.");
-                return;
-            }
-
-            if (_useEncryption)
-            {
-                try
-                {
-                    bytes = Decrypt(bytes);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogError($"Failed to decrypt game data. {exception}");
-                    return;
-                }
-            }
-
-            string json = DeserializeToJson(bytes);
-
-            JsonUtility.FromJsonOverwrite(json, _gameData);
-
-            Debug.Log("Game data loaded.");
-        }
-
-        private void ApplyDefaultGameData()
-        {
-            if (_defaultGameData == null)
-            {
-                return;
-            }
-
-            if (_gameData == null)
-            {
-                Debug.LogWarning("GameData reference is null.");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(_defaultGameData, prettyPrint: false);
-            JsonUtility.FromJsonOverwrite(json, _gameData);
-
-            Debug.Log("Default game data applied.");
-        }
-
-        public void SaveGameData()
-        {
-            if (_gameData == null)
-            {
-                Debug.LogWarning("GameData reference is not assigned. Cannot save game data.");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(_gameData, prettyPrint: false);
-            byte[] bytes = SerializeFromJson(json);
-
-            if (_useEncryption && bytes.Length > 0)
-            {
-                try
-                {
-                    bytes = Encrypt(bytes);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogError($"Failed to encrypt game data. {exception}");
-                    return;
-                }
-            }
-
-            SetDirectory(_gameDataPath);
-            File.WriteAllBytes(_gameDataPath, bytes);
-
-            Debug.Log("Game data saved.");
-        }
-
-        public void ResetGameData()
-        {
-            ApplyDefaultGameData();
-            SaveGameData();
-
-            Debug.Log("Game data reset to initial defaults and saved.");
-        }
-
-        public void LoadSettingsData()
-        {
-            if (!File.Exists(_settingsDataPath))
-            {
-                Debug.Log("Settings data file not found. Applying default data if available and saving.");
-
-                ApplyDefaultSettingsData();
-                SaveSettingsData();
-
-                return;
-            }
-
-            if (_settingsData == null)
-            {
-                Debug.LogWarning("SettingsData reference is not assigned. Cannot load settings data.");
-                return;
-            }
-
-            byte[] bytes = File.ReadAllBytes(_settingsDataPath);
-
-            if (bytes.Length == 0)
-            {
-                Debug.LogWarning("Settings data file is empty.");
-                return;
-            }
-
-            // SettingsData is never encrypted, even if _useEncryption is true.
-            string json = DeserializeToJson(bytes);
-
-            JsonUtility.FromJsonOverwrite(json, _settingsData);
-
-            Debug.Log("Settings data loaded.");
-        }
-
-        private void ApplyDefaultSettingsData()
-        {
-            if (_defaultSettingsData == null)
-            {
-                return;
-            }
-
-            if (_settingsData == null)
-            {
-                Debug.LogWarning("SettingsData reference is null.");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(_defaultSettingsData, prettyPrint: false);
-            JsonUtility.FromJsonOverwrite(json, _settingsData);
-
-            Debug.Log("Default settings data applied.");
-        }
-
-        public void SaveSettingsData()
-        {
-            if (_settingsData == null)
-            {
-                Debug.LogWarning("SettingsData reference is not assigned. Cannot save settings data.");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(_settingsData, prettyPrint: false);
-            byte[] bytes = SerializeFromJson(json);
-
-            // NOTE: SettingsData is never encrypted, even if _useEncryption is true.
-
-            SetDirectory(_settingsDataPath);
-            File.WriteAllBytes(_settingsDataPath, bytes);
-
-            Debug.Log("Settings data saved.");
-        }
-
-        public void ResetSettingsData()
-        {
-            ApplyDefaultSettingsData();
-            SaveSettingsData();
-
-            Debug.Log("Settings data reset to default values and saved.");
-        }
-
-        #region Utility
-
-        private string DeserializeToJson(byte[] bytes)
-        {
-            switch (_serializationFormat)
-            {
-                case DataSerializationFormat.Json:
-                {
-                    return Encoding.UTF8.GetString(bytes);
+                    Debug.LogError($"DataService: entry {i} of the container list is empty.", this);
+                    continue;
                 }
 
-                case DataSerializationFormat.Binary:
-                {
-                    using MemoryStream memoryStream = new MemoryStream(bytes);
-                    using BinaryReader binaryReader = new BinaryReader(memoryStream, Encoding.UTF8);
+                AddSlot(source);
+            }
+        }
 
-                    return binaryReader.ReadString();
+        private void AddSlot(DataContainer source)
+        {
+            Type type = source.GetType();
+
+            if (_slotsByType.ContainsKey(type))
+            {
+                Debug.LogError(
+                    $"DataService: {type.Name} is in the container list twice. {source.name} was left out.", this);
+                return;
+            }
+
+            if (!DataContainerSlot.TryCreate(source, out DataContainerSlot slot, out string error))
+            {
+                Debug.LogError($"DataService: {error}", this);
+                return;
+            }
+
+            if (!_fileNames.Add(slot.FileName))
+            {
+                Debug.LogError(
+                    $"DataService: {type.Name} uses the file name \"{slot.FileName}\", which another container " +
+                    "already uses. It was left out.", this);
+                slot.DestroyContainer();
+                return;
+            }
+
+            if (slot.Obfuscate && !_storage.CanObfuscate)
+            {
+                Debug.LogError(
+                    $"DataService: {type.Name} asks for obfuscation, but the service has no obfuscation key. " +
+                    "It is saved as plain text.", this);
+            }
+
+            _slots.Add(slot);
+            _slotsByType.Add(type, slot);
+
+            if (slot.UsesFile(IsDevelopmentBuild))
+            {
+                LoadSlot(slot);
+            }
+        }
+
+        private void LoadSlot(DataContainerSlot slot)
+        {
+            string containerName = slot.Source.GetType().Name;
+            DataLoadResult result;
+
+            // Whatever goes wrong with one container's files, the others still load and the service still registers.
+            try
+            {
+                result = slot.Load(_storage);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"DataService: {containerName} could not be loaded. The defaults are used.", this);
+                Debug.LogException(exception, this);
+
+                slot.ResetToDefaults();
+                return;
+            }
+
+            switch (result)
+            {
+                case DataLoadResult.NoFile:
+                {
+                    LogVerbose($"{containerName}: no saved file, using the defaults.");
+                    break;
+                }
+
+                case DataLoadResult.Current:
+                {
+                    LogVerbose($"{containerName} loaded.");
+                    break;
+                }
+
+                case DataLoadResult.Backup:
+                {
+                    Debug.LogWarning(
+                        $"DataService: the saved file of {containerName} is missing or cannot be read. " +
+                        "The backup was loaded.", this);
+                    break;
+                }
+
+                case DataLoadResult.Unreadable:
+                {
+                    Debug.LogWarning(
+                        $"DataService: neither the saved file of {containerName} nor its backup can be read. " +
+                        "The defaults are used.", this);
+                    break;
+                }
+
+                case DataLoadResult.DefaultsChanged:
+                {
+                    Debug.Log(
+                        $"DataService: the defaults of {containerName} have changed since its values were saved. " +
+                        "The saved values were dropped.", this);
+
+                    DeleteFile(slot);
+                    break;
                 }
 
                 default:
                 {
-                    throw new ArgumentOutOfRangeException();
+                    throw new ArgumentOutOfRangeException(nameof(result));
                 }
             }
         }
 
-        private byte[] SerializeFromJson(string json)
+        public T Get<T>() where T : DataContainer
         {
-            switch (_serializationFormat)
+            if (TryGet(out T container))
             {
-                case DataSerializationFormat.Json:
-                {
-                    return Encoding.UTF8.GetBytes(json);
-                }
+                return container;
+            }
 
-                case DataSerializationFormat.Binary:
-                {
-                    using MemoryStream memoryStream = new MemoryStream();
-                    using BinaryWriter binaryWriter = new BinaryWriter(memoryStream, Encoding.UTF8);
+            Debug.LogError($"DataService: {typeof(T).Name} is not in the container list.", this);
 
-                    binaryWriter.Write(json);
-                    binaryWriter.Flush();
-                    return memoryStream.ToArray();
-                }
+            return null;
+        }
 
-                default:
-                {
-                    throw new ArgumentOutOfRangeException();
-                }
+        public bool TryGet<T>(out T container) where T : DataContainer
+        {
+            if (_slotsByType.TryGetValue(typeof(T), out DataContainerSlot slot))
+            {
+                container = (T)slot.Container;
+                return true;
+            }
+
+            container = null;
+            return false;
+        }
+
+        public void Save<T>() where T : DataContainer
+        {
+            if (TryGetSlot<T>(out DataContainerSlot slot))
+            {
+                SaveSlot(slot);
             }
         }
 
-        private void SetDirectory(string path)
+        public void SaveAll()
         {
-            string directory = Path.GetDirectoryName(path);
-
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            foreach (DataContainerSlot slot in _slots)
             {
-                Directory.CreateDirectory(directory);
+                SaveSlot(slot);
             }
         }
 
-        private byte[] Decrypt(byte[] cipherBytes)
+        public void Reset<T>() where T : DataContainer
         {
-            if (string.IsNullOrEmpty(_encryptionPassword))
+            if (TryGetSlot<T>(out DataContainerSlot slot))
             {
-                Debug.LogWarning("Encryption password is empty. Data will be treated as plain bytes.");
-                return cipherBytes;
+                ResetSlot(slot);
             }
-
-            using Aes aes = Aes.Create();
-            using Rfc2898DeriveBytes keyDerivation =
-                new Rfc2898DeriveBytes(_encryptionPassword, _saltBytes, 10000);
-
-            aes.Key = keyDerivation.GetBytes(32);
-            aes.IV = keyDerivation.GetBytes(16);
-
-            using MemoryStream memoryStream = new MemoryStream(cipherBytes);
-            using CryptoStream cryptoStream =
-                new CryptoStream(memoryStream, aes.CreateDecryptor(), CryptoStreamMode.Read);
-            using MemoryStream resultStream = new MemoryStream();
-
-            cryptoStream.CopyTo(resultStream);
-            return resultStream.ToArray();
         }
 
-        private byte[] Encrypt(byte[] plainBytes)
+        public void ResetAll()
         {
-            if (string.IsNullOrEmpty(_encryptionPassword))
+            foreach (DataContainerSlot slot in _slots)
             {
-                Debug.LogWarning("Encryption password is empty. Data will not be encrypted.");
-                return plainBytes;
+                ResetSlot(slot);
+            }
+        }
+
+        public void GetContainers(List<DataContainer> results)
+        {
+            if (results == null)
+            {
+                throw new ArgumentNullException(nameof(results));
             }
 
-            using Aes aes = Aes.Create();
-            using Rfc2898DeriveBytes keyDerivation =
-                new Rfc2898DeriveBytes(_encryptionPassword, _saltBytes, 10000);
+            results.Clear();
 
-            aes.Key = keyDerivation.GetBytes(32); // 256-bit key
-            aes.IV = keyDerivation.GetBytes(16); // 128-bit IV
+            foreach (DataContainerSlot slot in _slots)
+            {
+                results.Add(slot.Container);
+            }
+        }
 
-            using MemoryStream memoryStream = new MemoryStream();
-            using CryptoStream cryptoStream =
-                new CryptoStream(memoryStream, aes.CreateEncryptor(), CryptoStreamMode.Write);
+        #region Internal Methods
 
-            cryptoStream.Write(plainBytes, 0, plainBytes.Length);
-            cryptoStream.FlushFinalBlock();
+        // For the inspector, which has a runtime copy in hand and no type argument.
+        internal void SaveInternal(DataContainer container)
+        {
+            if (container != null && _slotsByType.TryGetValue(container.GetType(), out DataContainerSlot slot))
+            {
+                SaveSlot(slot);
+            }
+        }
 
-            return memoryStream.ToArray();
+        internal void ResetInternal(DataContainer container)
+        {
+            if (container != null && _slotsByType.TryGetValue(container.GetType(), out DataContainerSlot slot))
+            {
+                ResetSlot(slot);
+            }
         }
 
         #endregion
+
+        private bool TryGetSlot<T>(out DataContainerSlot slot) where T : DataContainer
+        {
+            if (_slotsByType.TryGetValue(typeof(T), out slot))
+            {
+                return true;
+            }
+
+            Debug.LogError($"DataService: {typeof(T).Name} is not in the container list.", this);
+
+            return false;
+        }
+
+        private void SaveSlot(DataContainerSlot slot)
+        {
+            if (!slot.UsesFile(IsDevelopmentBuild) || !slot.NeedsWrite())
+            {
+                return;
+            }
+
+            string containerName = slot.Source.GetType().Name;
+
+            try
+            {
+                slot.Save(_storage);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"DataService: {containerName} could not be saved.", this);
+                Debug.LogException(exception, this);
+                return;
+            }
+
+            LogVerbose($"{containerName} saved.");
+        }
+
+        private void ResetSlot(DataContainerSlot slot)
+        {
+            slot.ResetToDefaults();
+
+            switch (slot.Persistence)
+            {
+                case DataPersistence.Saved:
+                {
+                    SaveSlot(slot);
+                    break;
+                }
+
+                case DataPersistence.BuildOnly:
+                {
+                    if (slot.UsesFile(IsDevelopmentBuild))
+                    {
+                        DeleteFile(slot);
+                    }
+
+                    break;
+                }
+
+                default:
+                {
+                    throw new ArgumentOutOfRangeException(nameof(slot.Persistence));
+                }
+            }
+
+            LogVerbose($"{slot.Source.GetType().Name} reset to its defaults.");
+        }
+
+        private void DeleteFile(DataContainerSlot slot)
+        {
+            try
+            {
+                _storage.Delete(slot.FileName);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"DataService: the saved file of {slot.Source.GetType().Name} could not be deleted.",
+                    this);
+                Debug.LogException(exception, this);
+                return;
+            }
+
+            slot.MarkFileDeleted();
+        }
+
+        private void LogVerbose(string message)
+        {
+            if (_verbose)
+            {
+                Debug.Log($"DataService: {message}", this);
+            }
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus)
+            {
+                SaveChanged();
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            SaveChanged();
+        }
+
+        protected override void OnDestroy()
+        {
+            base.OnDestroy();
+
+            SaveChanged();
+
+            foreach (DataContainerSlot slot in _slots)
+            {
+                slot.DestroyContainer();
+            }
+
+            _slots.Clear();
+            _slotsByType.Clear();
+            _fileNames.Clear();
+        }
+
+        private void SaveChanged()
+        {
+            if (_saveOnPause && _storage != null)
+            {
+                SaveAll();
+            }
+        }
     }
 }

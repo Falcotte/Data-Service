@@ -1,0 +1,22 @@
+{
+    "name": "AngryKoala.Data.SRDebugger",
+    "rootNamespace": "AngryKoala.Data",
+    "references": [
+        "AngryKoala.Data",
+        "AngryKoala.Services",
+        "StompyRobot.SRDebugger",
+        "StompyRobot.SRF"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "SRDEBUGGER",
+        "!DISABLE_SRDEBUGGER"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

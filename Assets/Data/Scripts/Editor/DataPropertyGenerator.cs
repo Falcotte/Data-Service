@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -10,390 +11,436 @@ namespace AngryKoala.Data
 {
     public static class DataPropertyGenerator
     {
-        private const string _playerDataPropertiesFileName = "PlayerData.Properties.Generated.cs";
-        private const string _gameDataPropertiesFileName = "GameData.Properties.Generated.cs";
-        private const string _settingsDataPropertiesFileName = "SettingsData.Properties.Generated.cs";
+        private const string _generatedFileSuffix = ".Properties.Generated.cs";
+        private const string _assetsFolderPrefix = "Assets/";
 
-        private const string _playerDataSROptionsFileName = "PlayerData.SROptions.Generated.cs";
-        private const string _gameDataSROptionsFileName = "GameData.SROptions.Generated.cs";
-        private const string _settingsDataSROptionsFileName = "SettingsData.SROptions.Generated.cs";
-
-        [MenuItem("Angry Koala/Data/Generate PlayerData", priority = 0)]
-        private static void GeneratePlayerData()
+        private static readonly Dictionary<Type, string> _keywordNames = new()
         {
-            GenerateData<PlayerData>(_playerDataPropertiesFileName, _playerDataSROptionsFileName,
-                "DataPropertyGenerator - PlayerData");
-        }
+            { typeof(bool), "bool" },
+            { typeof(byte), "byte" },
+            { typeof(sbyte), "sbyte" },
+            { typeof(char), "char" },
+            { typeof(decimal), "decimal" },
+            { typeof(double), "double" },
+            { typeof(float), "float" },
+            { typeof(int), "int" },
+            { typeof(uint), "uint" },
+            { typeof(long), "long" },
+            { typeof(ulong), "ulong" },
+            { typeof(short), "short" },
+            { typeof(ushort), "ushort" },
+            { typeof(string), "string" },
+            { typeof(object), "object" }
+        };
 
-        [MenuItem("Angry Koala/Data/Generate GameData", priority = 1)]
-        private static void GenerateGameData()
+        // A line of the generated file that declares a property: "public <type> <Name>".
+        private static readonly Regex _declaredPropertyRegex =
+            new(@"^[ \t]*public[ \t]+(?!partial\b)\S.*[ \t](\w+)[ \t]*\r?$", RegexOptions.Multiline);
+
+        [MenuItem("Angry Koala/Data/Generate Properties")]
+        private static void GenerateProperties()
         {
-            GenerateData<GameData>(_gameDataPropertiesFileName, _gameDataSROptionsFileName,
-                "DataPropertyGenerator - GameData");
-        }
+            int writtenCount = 0;
+            int unchangedCount = 0;
+            int skippedCount = 0;
 
-        [MenuItem("Angry Koala/Data/Generate SettingsData", priority = 2)]
-        private static void GenerateSettingsData()
-        {
-            GenerateData<SettingsData>(_settingsDataPropertiesFileName, _settingsDataSROptionsFileName,
-                "DataPropertyGenerator - SettingsData");
-        }
-
-        private static void GenerateData<TData>(string propertiesFileName, string srOptionsFileName,
-            string generatorName) where TData : ScriptableObject
-        {
-            Type dataType = typeof(TData);
-
-            FieldInfo[] fields = dataType.GetFields(
-                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-
-            Dictionary<string, SRDataOptionSettings> optionsByPropertyName =
-                GetSROptionsForData<TData>();
-            
-            StringBuilder propertiesBuilder = new StringBuilder();
-            StringBuilder srOptionsBuilder = new StringBuilder();
-
-            foreach (FieldInfo field in fields)
+            foreach (Type type in TypeCache.GetTypesDerivedFrom<DataContainer>())
             {
-                if (!field.IsPrivate)
+                if (type.IsAbstract || type.IsGenericType || type.IsNested)
                 {
                     continue;
                 }
 
-                if (field.GetCustomAttribute<SerializeField>() == null)
+                string scriptPath = GetScriptPath(type);
+
+                if (string.IsNullOrEmpty(scriptPath) ||
+                    !scriptPath.StartsWith(_assetsFolderPrefix, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                if (field.GetCustomAttribute<HideInInspector>() != null)
+                if (!IsDeclaredPartial(scriptPath, type.Name))
                 {
+                    skippedCount++;
                     continue;
                 }
 
-                string fieldName = field.Name;
+                string generatedPath = Path.Combine(Path.GetDirectoryName(scriptPath) ?? string.Empty,
+                    type.Name + _generatedFileSuffix);
+                bool hasGeneratedFile = File.Exists(generatedPath);
+                string existingCode = hasGeneratedFile ? File.ReadAllText(generatedPath) : string.Empty;
+                string code = GenerateCode(type, GetDeclaredPropertyNames(existingCode));
 
-                if (fieldName.StartsWith("<", StringComparison.Ordinal) ||
-                    fieldName.StartsWith("m_", StringComparison.Ordinal))
+                if (hasGeneratedFile && AreEqualIgnoringLineEndings(existingCode, code))
                 {
+                    unchangedCount++;
                     continue;
                 }
 
-                if (string.Equals(fieldName, "_srDataOptions", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                string propertyName = GetPropertyName(fieldName);
-                string typeName = GetTypeName(field.FieldType);
-
-                propertiesBuilder.AppendLine($"        public {typeName} {propertyName}");
-                propertiesBuilder.AppendLine("        {");
-                propertiesBuilder.AppendLine($"            get => {fieldName};");
-                propertiesBuilder.AppendLine($"            set => {fieldName} = value;");
-                propertiesBuilder.AppendLine("        }");
-                propertiesBuilder.AppendLine();
-
-                if (optionsByPropertyName.TryGetValue(propertyName, out SRDataOptionSettings settings) &&
-                    settings.Enabled)
-                {
-                    AppendSROptionsProperty<TData>(srOptionsBuilder, field.FieldType, propertyName, settings);
-                }
+                File.WriteAllText(generatedPath, code, new UTF8Encoding(false));
+                writtenCount++;
             }
 
-            string propertiesBlock = propertiesBuilder.ToString().TrimEnd();
-            string namespaceName = dataType.Namespace ?? "AngryKoala.Data";
-
-            string generatedPropertiesCode = $@"using System;
-using System.Collections.Generic;
-using UnityEngine;
-
-namespace {namespaceName}
-{{
-    /// <summary>
-    /// This class is generated by {generatorName}.
-    /// Any changes may be overwritten.
-    /// </summary>
-    public partial class {dataType.Name} : ScriptableObject
-    {{
-{propertiesBlock}
-    }}
-}}";
-
-            WriteGeneratedFile<TData>(propertiesFileName, generatedPropertiesCode);
-
-            string srOptionsProperties = srOptionsBuilder.ToString().TrimEnd();
-
-            string generatedSROptionsCode = $@"#if SRDEBUGGER
-
-using System.ComponentModel;
-using AngryKoala.Data;
-using AngryKoala.Services;
-using SRDebugger;
-
-/// <summary>
-/// This class is generated by {generatorName}.
-/// Any changes may be overwritten.
-/// </summary>
-public partial class SROptions
-{{
-{srOptionsProperties}
-}}
-
-#endif";
-
-#if SRDEBUGGER
-            WriteGeneratedFile<TData>(srOptionsFileName, generatedSROptionsCode);
-#else
-            TData tempInstance = ScriptableObject.CreateInstance<TData>();
-            MonoScript monoScript = MonoScript.FromScriptableObject(tempInstance);
-            UnityEngine.Object.DestroyImmediate(tempInstance);
-
-            string directory = Path.GetDirectoryName(AssetDatabase.GetAssetPath(monoScript));
-            string path = Path.Combine(directory, srOptionsFileName);
-
-            if (File.Exists(path))
+            if (writtenCount > 0)
             {
-                File.Delete(path);
                 AssetDatabase.Refresh();
             }
-#endif
-        }
-        
-        private static Dictionary<string, SRDataOptionSettings> GetSROptionsForData<TData>()
-            where TData : ScriptableObject
-        {
-            Dictionary<string, SRDataOptionSettings> result =
-                new Dictionary<string, SRDataOptionSettings>(StringComparer.Ordinal);
 
-            string[] guids = AssetDatabase.FindAssets($"t:{typeof(TData).Name}");
-            if (guids == null || guids.Length == 0)
-            {
-                return result;
-            }
-
-            Array.Sort(guids, StringComparer.Ordinal);
-
-            foreach (string guid in guids)
-            {
-                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-                TData dataAsset = AssetDatabase.LoadAssetAtPath<TData>(assetPath);
-
-                if (dataAsset == null)
-                {
-                    continue;
-                }
-
-                FieldInfo optionsField = typeof(TData).GetField(
-                    "_srDataOptions",
-                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-
-                if (optionsField == null)
-                {
-                    continue;
-                }
-
-                if (optionsField.GetValue(dataAsset) is not List<SRDataOptionEntry> entries)
-                {
-                    continue;
-                }
-
-                foreach (SRDataOptionEntry entry in entries)
-                {
-                    if (entry == null)
-                    {
-                        continue;
-                    }
-
-                    SRDataOptionSettings settings = entry.Settings;
-                    if (settings == null)
-                    {
-                        continue;
-                    }
-
-                    if (string.IsNullOrEmpty(entry.PropertyName))
-                    {
-                        continue;
-                    }
-
-                    string propertyName = entry.PropertyName;
-
-                    if (!result.TryGetValue(propertyName, out SRDataOptionSettings existing))
-                    {
-                        result[propertyName] = settings;
-                        continue;
-                    }
-
-                    if (!existing.Enabled && settings.Enabled)
-                    {
-                        result[propertyName] = settings;
-                    }
-                }
-            }
-
-            return result;
+            Debug.Log($"DataPropertyGenerator: {writtenCount} written, {unchangedCount} unchanged, " +
+                      $"{skippedCount} skipped because the class is not partial.");
         }
 
-        private static string GetPropertyName(string fieldName)
+        // Writes a property for every field, hand-written properties included.
+        internal static string GenerateCode(Type containerType)
         {
-            string cleanedFieldName = fieldName.TrimStart('_');
-
-            if (string.IsNullOrEmpty(cleanedFieldName))
-            {
-                return fieldName;
-            }
-
-            if (cleanedFieldName.Length == 1)
-            {
-                return cleanedFieldName.ToUpperInvariant();
-            }
-
-            return char.ToUpperInvariant(cleanedFieldName[0]) + cleanedFieldName.Substring(1);
+            return GenerateCodeInternal(containerType, null);
         }
 
-        private static string GetTypeName(Type type)
+        // Skips a field whose property name is a public property of the class that the generated file does not
+        // declare, because that property is hand-written.
+        internal static string GenerateCode(Type containerType, ISet<string> generatedPropertyNames)
         {
+            if (generatedPropertyNames == null)
+            {
+                throw new ArgumentNullException(nameof(generatedPropertyNames));
+            }
+
+            return GenerateCodeInternal(containerType, generatedPropertyNames);
+        }
+
+        internal static HashSet<string> GetDeclaredPropertyNames(string generatedCode)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+
+            if (string.IsNullOrEmpty(generatedCode))
+            {
+                return names;
+            }
+
+            foreach (Match match in _declaredPropertyRegex.Matches(generatedCode))
+            {
+                names.Add(match.Groups[1].Value);
+            }
+
+            return names;
+        }
+
+        internal static bool AreEqualIgnoringLineEndings(string first, string second)
+        {
+            return string.Equals(NormalizeLineEndings(first), NormalizeLineEndings(second), StringComparison.Ordinal);
+        }
+
+        internal static string GetTypeName(Type type)
+        {
+            if (type == null)
+            {
+                throw new ArgumentNullException(nameof(type));
+            }
+
             if (type.IsArray)
             {
-                Type elementType = type.GetElementType();
-                string elementName = GetTypeName(elementType);
-                return $"{elementName}[]";
+                return GetTypeName(type.GetElementType()) + "[" + new string(',', type.GetArrayRank() - 1) + "]";
             }
 
-            if (type == typeof(int)) return "int";
-            if (type == typeof(float)) return "float";
-            if (type == typeof(bool)) return "bool";
-            if (type == typeof(string)) return "string";
-            if (type == typeof(double)) return "double";
-            if (type == typeof(long)) return "long";
-            if (type == typeof(short)) return "short";
-            if (type == typeof(byte)) return "byte";
-            if (type == typeof(char)) return "char";
-            if (type == typeof(uint)) return "uint";
-            if (type == typeof(ulong)) return "ulong";
-            if (type == typeof(ushort)) return "ushort";
-            if (type == typeof(decimal)) return "decimal";
-
-            if (type.Namespace == "UnityEngine")
+            if (_keywordNames.TryGetValue(type, out string keyword))
             {
-                return type.Name;
+                return keyword;
             }
 
-            if (type.IsGenericType)
+            return GetNamedTypeName(type);
+        }
+
+        private static string GenerateCodeInternal(Type containerType, ISet<string> generatedPropertyNames)
+        {
+            if (containerType == null)
             {
-                Type genericDefinition = type.GetGenericTypeDefinition();
-                Type[] genericArguments = type.GetGenericArguments();
+                throw new ArgumentNullException(nameof(containerType));
+            }
 
-                string rawName = genericDefinition.Name;
-                int backtickIndex = rawName.IndexOf('`');
-                string genericTypeName = backtickIndex >= 0
-                    ? rawName.Substring(0, backtickIndex)
-                    : rawName;
+            bool hasNamespace = !string.IsNullOrEmpty(containerType.Namespace);
+            string indent = hasNamespace ? "    " : string.Empty;
+            string accessModifier = containerType.IsPublic ? "public" : "internal";
 
-                string[] genericArgumentNames = new string[genericArguments.Length];
-                for (int i = 0; i < genericArguments.Length; i++)
+            var builder = new StringBuilder();
+
+            AppendLine(builder, "// This file is generated by DataPropertyGenerator.");
+            AppendLine(builder, "// Any changes will be overwritten.");
+            AppendLine(builder, string.Empty);
+
+            if (hasNamespace)
+            {
+                AppendLine(builder, $"namespace {containerType.Namespace}");
+                AppendLine(builder, "{");
+            }
+
+            AppendLine(builder, $"{indent}{accessModifier} partial class {containerType.Name}");
+            AppendLine(builder, $"{indent}{{");
+
+            bool isFirstProperty = true;
+
+            HashSet<string> inheritedNames = GetInheritedMemberNames(containerType);
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (FieldInfo field in GetPropertyFields(containerType))
+            {
+                string propertyName = DataContainerFields.GetPropertyName(field.Name);
+                string skipReason = GetSkipReason(containerType, field, propertyName, inheritedNames);
+
+                if (skipReason != null)
                 {
-                    genericArgumentNames[i] = GetTypeName(genericArguments[i]);
+                    Debug.LogWarning($"DataPropertyGenerator: {containerType.Name}.{field.Name} is skipped, " +
+                                     skipReason);
+                    continue;
                 }
 
-                return $"{genericTypeName}<{string.Join(", ", genericArgumentNames)}>";
+                if (generatedPropertyNames != null && !generatedPropertyNames.Contains(propertyName) &&
+                    HasPublicProperty(containerType, propertyName))
+                {
+                    continue;
+                }
+
+                if (!usedNames.Add(propertyName))
+                {
+                    Debug.LogWarning($"DataPropertyGenerator: {containerType.Name}.{field.Name} is skipped, " +
+                                     $"an earlier field already produces the property \"{propertyName}\".");
+                    continue;
+                }
+
+                if (!isFirstProperty)
+                {
+                    AppendLine(builder, string.Empty);
+                }
+
+                isFirstProperty = false;
+
+                AppendLine(builder, $"{indent}    public {GetTypeName(field.FieldType)} {propertyName}");
+                AppendLine(builder, $"{indent}    {{");
+                AppendLine(builder, $"{indent}        get => {field.Name};");
+                AppendLine(builder, $"{indent}        set => {field.Name} = value;");
+                AppendLine(builder, $"{indent}    }}");
             }
 
-            return type.Name;
+            AppendLine(builder, $"{indent}}}");
+
+            if (hasNamespace)
+            {
+                AppendLine(builder, "}");
+            }
+
+            return builder.ToString();
         }
 
-        private static void AppendSROptionsProperty<TData>(StringBuilder builder, Type fieldType, string propertyName,
-            SRDataOptionSettings settings) where TData : ScriptableObject
+        private static List<FieldInfo> GetPropertyFields(Type containerType)
         {
-            string dataTypeName = typeof(TData).Name;
-            string srPropertyName = dataTypeName + propertyName;
-            
-            if (!string.IsNullOrEmpty(settings.Category))
+            const BindingFlags bindingFlags =
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            var fields = new List<FieldInfo>();
+
+            foreach (FieldInfo field in containerType.GetFields(bindingFlags))
             {
-                builder.AppendLine($"    [Category(\"{SanitizeAttributeString(settings.Category)}\")]");
+                if (!field.IsPrivate || !field.IsDefined(typeof(SerializeField), inherit: false) ||
+                    field.IsDefined(typeof(HideInInspector), inherit: false))
+                {
+                    continue;
+                }
+
+                if (field.Name.StartsWith("<", StringComparison.Ordinal) ||
+                    field.Name.StartsWith("m_", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // A public property cannot have a type that is not public.
+                if (!field.FieldType.IsVisible)
+                {
+                    continue;
+                }
+
+                fields.Add(field);
             }
 
-            if (!string.IsNullOrEmpty(settings.DisplayName))
-            {
-                builder.AppendLine($"    [DisplayName(\"{SanitizeAttributeString(settings.DisplayName)}\")]");
-            }
-
-            if (settings.Sort != 0)
-            {
-                builder.AppendLine($"    [Sort({settings.Sort})]");
-            }
-
-            bool isNumeric =
-                fieldType == typeof(int) ||
-                fieldType == typeof(uint) ||
-                fieldType == typeof(short) ||
-                fieldType == typeof(ushort) ||
-                fieldType == typeof(byte) ||
-                fieldType == typeof(sbyte) ||
-                fieldType == typeof(float) ||
-                fieldType == typeof(double);
-
-            if (isNumeric && settings.NumberRange != null && settings.NumberRange.Enabled)
-            {
-                string minString = settings.NumberRange.Min.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                string maxString = settings.NumberRange.Max.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-                builder.AppendLine($"    [NumberRange({minString}, {maxString})]");
-            }
-
-            if (isNumeric && Math.Abs(settings.Increment) > double.Epsilon &&
-                Math.Abs(settings.Increment - 1d) > double.Epsilon)
-            {
-                string incrementString = settings.Increment.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-                builder.AppendLine($"    [Increment({incrementString})]");
-            }
-
-            string dataServiceAccessor = $"DataService.{dataTypeName}";
-            string typeName = GetTypeName(fieldType);
-
-            builder.AppendLine($"    public {typeName} {srPropertyName}");
-            builder.AppendLine("    {");
-            builder.AppendLine($"        get => {dataServiceAccessor}.{propertyName};");
-            builder.AppendLine($"        set => {dataServiceAccessor}.{propertyName} = value;");
-            builder.AppendLine("    }");
-            builder.AppendLine();
+            return fields;
         }
 
-        private static string SanitizeAttributeString(string value)
+        private static string GetSkipReason(Type containerType, FieldInfo field, string propertyName,
+            HashSet<string> inheritedNames)
         {
-            if (string.IsNullOrEmpty(value))
+            if (!IsValidIdentifier(propertyName))
             {
-                return string.Empty;
+                return $"\"{propertyName}\" is not a valid C# identifier.";
             }
 
-            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            if (string.Equals(propertyName, containerType.Name, StringComparison.Ordinal))
+            {
+                return $"the property name \"{propertyName}\" is the name of the class.";
+            }
+
+            if (string.Equals(propertyName, field.Name, StringComparison.Ordinal))
+            {
+                return $"the property name \"{propertyName}\" is the name of the field.";
+            }
+
+            if (inheritedNames.Contains(propertyName))
+            {
+                return $"the property name \"{propertyName}\" is already a member of a base class.";
+            }
+
+            return null;
         }
 
-        private static void WriteGeneratedFile<TData>(string generatedFileName, string code)
-            where TData : ScriptableObject
+        private static bool IsValidIdentifier(string identifier)
         {
-            TData tempInstance = ScriptableObject.CreateInstance<TData>();
-            MonoScript monoScript = MonoScript.FromScriptableObject(tempInstance);
-            UnityEngine.Object.DestroyImmediate(tempInstance);
-
-            string originalPath = AssetDatabase.GetAssetPath(monoScript);
-            if (string.IsNullOrEmpty(originalPath))
+            if (string.IsNullOrEmpty(identifier) || !(char.IsLetter(identifier[0]) || identifier[0] == '_'))
             {
-                Debug.LogError($"Could not locate {typeof(TData).Name}.cs script asset.");
-                return;
+                return false;
             }
 
-            string directory = Path.GetDirectoryName(originalPath);
-            if (string.IsNullOrEmpty(directory))
+            foreach (char character in identifier)
             {
-                Debug.LogError($"Could not determine directory for {typeof(TData).Name}.cs.");
-                return;
+                if (!char.IsLetterOrDigit(character) && character != '_')
+                {
+                    return false;
+                }
             }
 
-            string generatedPath = Path.Combine(directory, generatedFileName);
+            return true;
+        }
 
-            File.WriteAllText(generatedPath, code, Encoding.UTF8);
-            AssetDatabase.Refresh();
+        // The names of the public and protected instance members that the class inherits.
+        private static HashSet<string> GetInheritedMemberNames(Type containerType)
+        {
+            const BindingFlags bindingFlags =
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            var names = new HashSet<string>(StringComparer.Ordinal);
+
+            for (Type baseType = containerType.BaseType; baseType != null; baseType = baseType.BaseType)
+            {
+                foreach (MemberInfo member in baseType.GetMembers(bindingFlags))
+                {
+                    if (IsVisibleToDerivedClasses(member))
+                    {
+                        names.Add(member.Name);
+                    }
+                }
+            }
+
+            return names;
+        }
+
+        private static bool IsVisibleToDerivedClasses(MemberInfo member)
+        {
+            return member switch
+            {
+                FieldInfo field => field.IsPublic || field.IsFamily || field.IsFamilyOrAssembly,
+                MethodBase method => IsAccessibleToDerivedClasses(method),
+                PropertyInfo property => Array.Exists(property.GetAccessors(true), IsAccessibleToDerivedClasses),
+                EventInfo eventInfo => IsAccessibleToDerivedClasses(eventInfo.GetAddMethod(true)),
+                _ => false
+            };
+        }
+
+        private static bool IsAccessibleToDerivedClasses(MethodBase method)
+        {
+            return method != null && (method.IsPublic || method.IsFamily || method.IsFamilyOrAssembly);
+        }
+
+        private static bool HasPublicProperty(Type containerType, string propertyName)
+        {
+            return containerType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public) != null;
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return text.Replace("\r\n", "\n");
+        }
+
+        private static string GetNamedTypeName(Type type)
+        {
+            var chain = new List<Type>();
+
+            for (Type current = type; current != null; current = current.DeclaringType)
+            {
+                chain.Insert(0, current);
+            }
+
+            Type[] arguments = type.IsGenericType ? type.GetGenericArguments() : Type.EmptyTypes;
+
+            var builder = new StringBuilder("global::");
+
+            if (!string.IsNullOrEmpty(chain[0].Namespace))
+            {
+                builder.Append(chain[0].Namespace).Append('.');
+            }
+
+            int argumentIndex = 0;
+
+            for (int i = 0; i < chain.Count; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append('.');
+                }
+
+                string typeName = chain[i].Name;
+                int backtickIndex = typeName.IndexOf('`');
+
+                builder.Append(backtickIndex >= 0 ? typeName.Substring(0, backtickIndex) : typeName);
+
+                // A nested type of a generic class repeats the arguments of the classes around it.
+                int ownArgumentCount = chain[i].GetGenericArguments().Length -
+                                       (i > 0 ? chain[i - 1].GetGenericArguments().Length : 0);
+
+                if (ownArgumentCount <= 0)
+                {
+                    continue;
+                }
+
+                var argumentNames = new List<string>();
+
+                for (int j = 0; j < ownArgumentCount; j++)
+                {
+                    argumentNames.Add(GetTypeName(arguments[argumentIndex++]));
+                }
+
+                builder.Append('<').Append(string.Join(", ", argumentNames)).Append('>');
+            }
+
+            return builder.ToString();
+        }
+
+        private static bool IsDeclaredPartial(string scriptPath, string className)
+        {
+            string scriptText = File.ReadAllText(scriptPath);
+
+            return Regex.IsMatch(scriptText, $@"partial\s+class\s+{Regex.Escape(className)}\b");
+        }
+
+        private static string GetScriptPath(Type containerType)
+        {
+            ScriptableObject instance = ScriptableObject.CreateInstance(containerType);
+
+            if (instance == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                MonoScript script = MonoScript.FromScriptableObject(instance);
+
+                return script != null ? AssetDatabase.GetAssetPath(script) : null;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(instance);
+            }
+        }
+
+        private static void AppendLine(StringBuilder builder, string line)
+        {
+            builder.Append(line).Append('\n');
         }
     }
 }
