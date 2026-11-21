@@ -9,10 +9,8 @@ using UnityEngine;
 
 namespace AngryKoala.Data
 {
-    /// <summary>
-    /// Shows the fields ticked "Add to SROptions" on the SRDebugger options page, for as long as a data service
-    /// is registered. Compiled only when the project defines SRDEBUGGER.
-    /// </summary>
+    // Shows the fields ticked "Add to SROptions" on the SRDebugger options page, for as long as a data service
+    // is registered. Compiled only when the project defines SRDEBUGGER.
     internal static class DataDebugOptions
     {
         private static DynamicOptionContainer _optionContainer;
@@ -102,9 +100,7 @@ namespace AngryKoala.Data
             _dataService = null;
         }
 
-        /// <summary>
-        /// Adds one option per enabled entry whose field still exists on its container.
-        /// </summary>
+        // Adds one option per enabled entry whose field still exists on its container.
         internal static void BuildOptions(IReadOnlyList<DataContainer> containers,
             DynamicOptionContainer optionContainer)
         {
@@ -189,7 +185,7 @@ namespace AngryKoala.Data
             var property = new PropertyReference(
                 fieldType,
                 getter: () => field.GetValue(container),
-                setter: value => field.SetValue(container, Convert(value, fieldType)),
+                setter: value => field.SetValue(container, ConvertValue(value, fieldType)),
                 attributes.ToArray());
 
             string name = string.IsNullOrEmpty(settings.DisplayName) ? entry.PropertyName : settings.DisplayName;
@@ -198,7 +194,7 @@ namespace AngryKoala.Data
             return new OptionDefinition(name, category, settings.Sort, property);
         }
 
-        private static object Convert(object value, Type fieldType)
+        private static object ConvertValue(object value, Type fieldType)
         {
             if (value == null || fieldType.IsInstanceOfType(value))
             {
@@ -210,7 +206,7 @@ namespace AngryKoala.Data
                 return Enum.ToObject(fieldType, value);
             }
 
-            return System.Convert.ChangeType(value, fieldType);
+            return Convert.ChangeType(value, fieldType);
         }
     }
 }

@@ -457,6 +457,133 @@ namespace AngryKoala.Data.Tests
             Assert.AreEqual(0, renamedFieldData.NewName);
         }
 
+        [Test]
+        public void Start_WithTwoClassesOnOneFileName_LogsAnErrorAndKeepsTheFirst()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("TestSharedFileData uses the file name"));
+
+            DataService service = StartService(CreateAsset<TestPlayerData>(), CreateAsset<TestSharedFileData>());
+
+            Assert.IsTrue(service.TryGet(out TestPlayerData _));
+            Assert.IsFalse(service.TryGet(out TestSharedFileData _));
+        }
+
+        [Test]
+        public void Start_WithAnInvalidFileName_LogsAnErrorAndLoadsTheRest()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("TestBadFileNameData has the file name"));
+
+            DataService service = StartService(CreateAsset<TestBadFileNameData>(), CreateAsset<TestPlayerData>());
+
+            Assert.IsFalse(service.TryGet(out TestBadFileNameData _));
+            Assert.IsTrue(service.TryGet(out TestPlayerData _));
+            Assert.IsTrue(ServiceLocator.IsRegistered<IDataService>());
+        }
+
+        [Test]
+        public void Save_AfterLoadingASaveOfANewerVersion_KeepsTheNewerVersionNumber()
+        {
+            var storage = new DataStorage(_folderPath, _obfuscationKey);
+            const int newerVersion = TestVersionedData.CurrentDataVersion + 6;
+            storage.Write(nameof(TestVersionedData), obfuscate: false,
+                new DataFileContent(newerVersion, null, "{\"_score\":4}"));
+
+            DataService service = StartService(CreateAsset<TestVersionedData>());
+            service.Get<TestVersionedData>().Score = 5;
+            service.SaveAll();
+
+            storage.Read(nameof(TestVersionedData), DataFileKind.Current, obfuscate: false,
+                out DataFileContent content);
+            Assert.AreEqual(newerVersion, content.Version);
+            Assert.AreEqual(-1, service.Get<TestVersionedData>().MigratedFromVersion);
+        }
+
+        [Test]
+        public void Start_WhenMigrateThrows_LogsItAndStillLoadsAndRegisters()
+        {
+            var storage = new DataStorage(_folderPath, _obfuscationKey);
+            storage.Write(nameof(TestThrowingData), obfuscate: false, new DataFileContent(1, null, "{\"_score\":4}"));
+            LogAssert.Expect(LogType.Error, new Regex("TestThrowingData.Migrate threw"));
+            LogAssert.Expect(LogType.Exception, new Regex("Migrate failed on purpose"));
+
+            DataService service = StartService(CreateAsset<TestThrowingData>(), CreateAsset<TestPlayerData>());
+
+            Assert.AreEqual(4, service.Get<TestThrowingData>().Score);
+            Assert.IsTrue(service.TryGet(out TestPlayerData _));
+            Assert.IsTrue(ServiceLocator.IsRegistered<IDataService>());
+        }
+
+        [Test]
+        public void Start_OfASecondService_LogsAnErrorAndLoadsAndSavesNothing()
+        {
+            DataService firstService = StartService(CreateAsset<TestPlayerData>());
+            LogAssert.Expect(LogType.Error, new Regex("another data service is already registered"));
+
+            var secondObject = new GameObject("Second DataService");
+            _createdObjects.Add(secondObject);
+            secondObject.SetActive(false);
+            DataService secondService = secondObject.AddComponent<DataService>();
+            secondService.ContainerAssets.Add(CreateAsset<TestPlayerData>());
+            secondService.FolderPath = _folderPath;
+            secondObject.SetActive(true);
+
+            Assert.IsFalse(secondService.TryGet(out TestPlayerData _));
+
+            Object.DestroyImmediate(secondObject);
+
+            Assert.IsFalse(File.Exists(GetFilePath(nameof(TestPlayerData))),
+                "The second service wrote a file of defaults.");
+            Assert.IsTrue(ServiceLocator.TryGet(out IDataService registeredService));
+            Assert.AreSame(firstService, registeredService);
+        }
+
+        [Test]
+        public void Quit_SavesChangedContainers()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            service.Get<TestPlayerData>().Level = 5;
+
+            service.SendMessage("OnApplicationQuit");
+
+            StringAssert.Contains("\"_level\":5", File.ReadAllText(GetFilePath(nameof(TestPlayerData))));
+        }
+
+        [Test]
+        public void Save_AfterLoadingTheBackup_KeepsTheBackupAndSetsTheUnreadableFileAside()
+        {
+            DataService firstService = StartService(CreateAsset<TestPlayerData>());
+            firstService.Get<TestPlayerData>().Level = 6;
+            firstService.SaveAll();
+            firstService.Get<TestPlayerData>().Level = 7;
+            firstService.SaveAll();
+            DestroyService();
+
+            WriteFile(GetFilePath(nameof(TestPlayerData)), _cutOffFileText);
+            LogAssert.Expect(LogType.Warning, new Regex("backup was loaded"));
+
+            DataService secondService = StartService(CreateAsset<TestPlayerData>());
+            secondService.SaveAll();
+
+            StringAssert.Contains("\"_level\":6", File.ReadAllText(GetFilePath(nameof(TestPlayerData))));
+            StringAssert.Contains("\"_level\":6", File.ReadAllText(GetBackupPath(nameof(TestPlayerData))),
+                "The unreadable file replaced the good backup.");
+            Assert.AreEqual(_cutOffFileText,
+                File.ReadAllText(Path.Combine(_folderPath, nameof(TestPlayerData) + ".corrupt")));
+        }
+
+        [Test]
+        public void Save_OfAContainerWithoutFields_WritesEmptyJson()
+        {
+            TestEmptyData asset = CreateAsset<TestEmptyData>();
+            asset.SRDataOptionList.Add(new SRDataOptionEntry { PropertyName = "Anything" });
+            DataService service = StartService(asset);
+
+            service.Save<TestEmptyData>();
+
+            string[] lines = File.ReadAllText(GetFilePath(nameof(TestEmptyData))).Split('\n');
+            Assert.AreEqual("{}", lines[1]);
+        }
+
         private void SaveLevel(int level)
         {
             DataService service = StartService(CreateAsset<TestPlayerData>());

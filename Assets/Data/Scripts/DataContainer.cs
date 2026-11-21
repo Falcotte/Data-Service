@@ -33,9 +33,7 @@ namespace AngryKoala.Data
 
         internal void MigrateInternal(int savedVersion, string savedJson) => Migrate(savedVersion, savedJson);
 
-        /// <summary>
-        /// The container's values as JSON, without the debug option settings.
-        /// </summary>
+        // The container's values as JSON, without the debug option settings.
         internal string ToSaveJson()
         {
             List<SRDataOptionEntry> options = _srDataOptions;

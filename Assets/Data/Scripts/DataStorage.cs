@@ -5,23 +5,8 @@ using System.Text;
 
 namespace AngryKoala.Data
 {
-    internal enum DataFileKind
-    {
-        Current,
-        Backup
-    }
-
-    internal enum DataReadResult
-    {
-        Missing,
-        Unreadable,
-        Read
-    }
-
-    /// <summary>
-    /// Reads and writes data files in one folder. A write goes to a temporary file first; the file it replaces
-    /// is kept as the backup.
-    /// </summary>
+    // Reads and writes data files in one folder. A write goes to a temporary file first. The file it replaces
+    // is kept as the backup, or set aside when it could not be read.
     internal sealed class DataStorage
     {
         public string FolderPath { get; }
@@ -37,6 +22,7 @@ namespace AngryKoala.Data
         private const string _fileExtension = ".dat";
         private const string _backupExtension = ".bak";
         private const string _temporaryExtension = ".tmp";
+        private const string _unreadableExtension = ".corrupt";
 
         private const int _keyLength = 32;
         private const int _blockLength = 16;
@@ -46,6 +32,16 @@ namespace AngryKoala.Data
         {
             FolderPath = folderPath ?? throw new ArgumentNullException(nameof(folderPath));
             _obfuscationKey = obfuscationKey;
+        }
+
+        public static bool IsValidFileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return false;
+            }
+
+            return fileName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
         }
 
         public string GetPath(string fileName, DataFileKind kind)
@@ -64,15 +60,15 @@ namespace AngryKoala.Data
         {
             content = null;
 
-            string path = GetPath(fileName, kind);
-
-            if (!File.Exists(path))
-            {
-                return DataReadResult.Missing;
-            }
-
             try
             {
+                string path = GetPath(fileName, kind);
+
+                if (!File.Exists(path))
+                {
+                    return DataReadResult.Missing;
+                }
+
                 byte[] bytes = File.ReadAllBytes(path);
 
                 if (obfuscate && CanObfuscate)
@@ -91,7 +87,8 @@ namespace AngryKoala.Data
             }
         }
 
-        public void Write(string fileName, bool obfuscate, DataFileContent content)
+        public void Write(string fileName, bool obfuscate, DataFileContent content,
+            DataReplaceRule replaceRule = DataReplaceRule.KeepAsBackup)
         {
             if (content == null)
             {
@@ -115,8 +112,15 @@ namespace AngryKoala.Data
 
             if (File.Exists(currentPath))
             {
-                File.Delete(backupPath);
-                File.Move(currentPath, backupPath);
+                string replacedPath = replaceRule switch
+                {
+                    DataReplaceRule.KeepAsBackup => backupPath,
+                    DataReplaceRule.SetAside => Path.Combine(FolderPath, fileName + _unreadableExtension),
+                    _ => throw new ArgumentOutOfRangeException(nameof(replaceRule))
+                };
+
+                File.Delete(replacedPath);
+                File.Move(currentPath, replacedPath);
             }
 
             File.Move(temporaryPath, currentPath);
@@ -132,6 +136,7 @@ namespace AngryKoala.Data
             File.Delete(GetPath(fileName, DataFileKind.Current));
             File.Delete(GetPath(fileName, DataFileKind.Backup));
             File.Delete(GetTemporaryPath(fileName));
+            File.Delete(Path.Combine(FolderPath, fileName + _unreadableExtension));
         }
 
         private string GetTemporaryPath(string fileName) => Path.Combine(FolderPath, fileName + _temporaryExtension);

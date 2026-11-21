@@ -4,7 +4,7 @@ using UnityEngine;
 namespace AngryKoala.Data
 {
     [Serializable]
-    public class SRDataOptionSettings
+    public sealed class SRDataOptionSettings
     {
         [SerializeField] private bool _enabled;
 

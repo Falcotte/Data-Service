@@ -81,6 +81,34 @@ namespace AngryKoala.Data.Tests
         }
 
         [Test]
+        public void Write_WithSetAside_LeavesTheBackupAloneAndKeepsTheReplacedFile()
+        {
+            var storage = new DataStorage(_folderPath, obfuscationKey: null);
+            storage.Write(_fileName, obfuscate: false, new DataFileContent(1, null, "{\"_level\":1}"));
+            storage.Write(_fileName, obfuscate: false, new DataFileContent(1, null, "{\"_level\":2}"));
+
+            storage.Write(_fileName, obfuscate: false, new DataFileContent(1, null, "{\"_level\":3}"),
+                DataReplaceRule.SetAside);
+
+            storage.Read(_fileName, DataFileKind.Current, obfuscate: false, out DataFileContent current);
+            storage.Read(_fileName, DataFileKind.Backup, obfuscate: false, out DataFileContent backup);
+            Assert.AreEqual("{\"_level\":3}", current.Json);
+            Assert.AreEqual("{\"_level\":1}", backup.Json);
+            StringAssert.Contains("\"_level\":2",
+                File.ReadAllText(Path.Combine(_folderPath, _fileName + ".corrupt")));
+        }
+
+        [Test]
+        public void IsValidFileName_RejectsEmptyNamesAndPathCharacters()
+        {
+            Assert.IsTrue(DataStorage.IsValidFileName("PlayerData"));
+            Assert.IsFalse(DataStorage.IsValidFileName(""));
+            Assert.IsFalse(DataStorage.IsValidFileName(" "));
+            Assert.IsFalse(DataStorage.IsValidFileName("bad/name"));
+            Assert.IsFalse(DataStorage.IsValidFileName("bad\\name"));
+        }
+
+        [Test]
         public void Read_OfAFileWithoutAHeaderLine_ReturnsUnreadable()
         {
             var storage = new DataStorage(_folderPath, obfuscationKey: null);

@@ -4,10 +4,10 @@ using UnityEngine;
 namespace AngryKoala.Data
 {
     [Serializable]
-    public class SRDataOptionRange
+    public sealed class SRDataOptionRange
     {
         [SerializeField] private bool _enabled;
-        
+
         [SerializeField] private double _min;
         [SerializeField] private double _max = 1d;
 

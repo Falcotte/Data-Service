@@ -11,16 +11,10 @@ namespace AngryKoala.Data
         [SerializeField] [Tooltip("One asset per data class. Each asset holds the defaults of its class.")]
         private List<DataContainer> _containers = new();
 
+        internal List<DataContainer> ContainerAssets => _containers;
+
         [SerializeField] [Tooltip("Text the key for obfuscated containers is made from.")]
         private string _obfuscationKey;
-
-        [SerializeField] [Tooltip("Save changed containers when the app is paused, quits or the service is destroyed.")]
-        private bool _saveOnPause = true;
-
-        [SerializeField] [Tooltip("Log every load and save.")]
-        private bool _verbose;
-
-        internal List<DataContainer> ContainerAssets => _containers;
 
         internal string ObfuscationKey
         {
@@ -28,11 +22,17 @@ namespace AngryKoala.Data
             set => _obfuscationKey = value;
         }
 
+        [SerializeField] [Tooltip("Save changed containers when the app is paused, quits or the service is destroyed.")]
+        private bool _saveOnPause = true;
+
         internal bool SaveOnPause
         {
             get => _saveOnPause;
             set => _saveOnPause = value;
         }
+
+        [SerializeField] [Tooltip("Log every load and save.")]
+        private bool _verbose;
 
         internal string FolderPath
         {
@@ -50,6 +50,7 @@ namespace AngryKoala.Data
 
         private readonly List<DataContainerSlot> _slots = new();
         private readonly Dictionary<Type, DataContainerSlot> _slotsByType = new();
+        private readonly HashSet<string> _fileNames = new(StringComparer.OrdinalIgnoreCase);
 
         private DataStorage _storage;
 
@@ -60,10 +61,24 @@ namespace AngryKoala.Data
 
         protected override void Awake()
         {
+            if (IsSecondInstance())
+            {
+                Debug.LogError(
+                    "DataService: another data service is already registered. This one loads and saves nothing, " +
+                    "so that two services cannot write over each other's files.", this);
+                return;
+            }
+
             // Loading comes before registering, so that whoever finds the service finds it loaded.
             LoadContainers();
 
             base.Awake();
+        }
+
+        private bool IsSecondInstance()
+        {
+            return _autoRegister && ServiceLocator.TryGet(out IDataService registeredService) &&
+                   !ReferenceEquals(registeredService, this);
         }
 
         private void LoadContainers()
@@ -101,6 +116,15 @@ namespace AngryKoala.Data
                 return;
             }
 
+            if (!_fileNames.Add(slot.FileName))
+            {
+                Debug.LogError(
+                    $"DataService: {type.Name} uses the file name \"{slot.FileName}\", which another container " +
+                    "already uses. It was left out.", this);
+                slot.DestroyContainer();
+                return;
+            }
+
             if (slot.Obfuscate && !_storage.CanObfuscate)
             {
                 Debug.LogError(
@@ -119,27 +143,41 @@ namespace AngryKoala.Data
 
         private void LoadSlot(DataContainerSlot slot)
         {
-            DataLoadResult result = slot.Load(_storage);
-            string name = slot.Source.GetType().Name;
+            string containerName = slot.Source.GetType().Name;
+            DataLoadResult result;
+
+            // Whatever goes wrong with one container's files, the others still load and the service still registers.
+            try
+            {
+                result = slot.Load(_storage);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"DataService: {containerName} could not be loaded. The defaults are used.", this);
+                Debug.LogException(exception, this);
+
+                slot.ResetToDefaults();
+                return;
+            }
 
             switch (result)
             {
                 case DataLoadResult.NoFile:
                 {
-                    LogVerbose($"{name}: no saved file, using the defaults.");
+                    LogVerbose($"{containerName}: no saved file, using the defaults.");
                     break;
                 }
 
                 case DataLoadResult.Current:
                 {
-                    LogVerbose($"{name} loaded.");
+                    LogVerbose($"{containerName} loaded.");
                     break;
                 }
 
                 case DataLoadResult.Backup:
                 {
                     Debug.LogWarning(
-                        $"DataService: the saved file of {name} is missing or cannot be read. " +
+                        $"DataService: the saved file of {containerName} is missing or cannot be read. " +
                         "The backup was loaded.", this);
                     break;
                 }
@@ -147,7 +185,7 @@ namespace AngryKoala.Data
                 case DataLoadResult.Unreadable:
                 {
                     Debug.LogWarning(
-                        $"DataService: neither the saved file of {name} nor its backup can be read. " +
+                        $"DataService: neither the saved file of {containerName} nor its backup can be read. " +
                         "The defaults are used.", this);
                     break;
                 }
@@ -155,14 +193,16 @@ namespace AngryKoala.Data
                 case DataLoadResult.DefaultsChanged:
                 {
                     Debug.Log(
-                        $"DataService: the defaults of {name} have changed since its values were saved. " +
+                        $"DataService: the defaults of {containerName} have changed since its values were saved. " +
                         "The saved values were dropped.", this);
+
+                    DeleteFile(slot);
                     break;
                 }
 
                 default:
                 {
-                    throw new ArgumentOutOfRangeException();
+                    throw new ArgumentOutOfRangeException(nameof(result));
                 }
             }
         }
@@ -240,9 +280,7 @@ namespace AngryKoala.Data
 
         #region Internal Methods
 
-        /// <summary>
-        /// For the inspector, which has a runtime copy in hand and no type argument.
-        /// </summary>
+        // For the inspector, which has a runtime copy in hand and no type argument.
         internal void SaveInternal(DataContainer container)
         {
             if (container != null && _slotsByType.TryGetValue(container.GetType(), out DataContainerSlot slot))
@@ -280,7 +318,7 @@ namespace AngryKoala.Data
                 return;
             }
 
-            string name = slot.Source.GetType().Name;
+            string containerName = slot.Source.GetType().Name;
 
             try
             {
@@ -288,12 +326,12 @@ namespace AngryKoala.Data
             }
             catch (Exception exception)
             {
-                Debug.LogError($"DataService: {name} could not be saved.", this);
+                Debug.LogError($"DataService: {containerName} could not be saved.", this);
                 Debug.LogException(exception, this);
                 return;
             }
 
-            LogVerbose($"{name} saved.");
+            LogVerbose($"{containerName} saved.");
         }
 
         private void ResetSlot(DataContainerSlot slot)
@@ -320,7 +358,7 @@ namespace AngryKoala.Data
 
                 default:
                 {
-                    throw new ArgumentOutOfRangeException();
+                    throw new ArgumentOutOfRangeException(nameof(slot.Persistence));
                 }
             }
 
@@ -338,6 +376,7 @@ namespace AngryKoala.Data
                 Debug.LogError($"DataService: the saved file of {slot.Source.GetType().Name} could not be deleted.",
                     this);
                 Debug.LogException(exception, this);
+                return;
             }
 
             slot.MarkFileDeleted();
@@ -366,9 +405,9 @@ namespace AngryKoala.Data
 
         protected override void OnDestroy()
         {
-            SaveChanged();
-
             base.OnDestroy();
+
+            SaveChanged();
 
             foreach (DataContainerSlot slot in _slots)
             {
@@ -377,6 +416,7 @@ namespace AngryKoala.Data
 
             _slots.Clear();
             _slotsByType.Clear();
+            _fileNames.Clear();
         }
 
         private void SaveChanged()

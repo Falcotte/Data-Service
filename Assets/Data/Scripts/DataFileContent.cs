@@ -3,9 +3,7 @@ using UnityEngine;
 
 namespace AngryKoala.Data
 {
-    /// <summary>
-    /// What a data file holds: one header line, then the container's JSON.
-    /// </summary>
+    // What a data file holds: one header line, then the container's JSON.
     internal sealed class DataFileContent
     {
         public int Version { get; }

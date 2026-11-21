@@ -6,19 +6,8 @@ using UnityEngine;
 
 namespace AngryKoala.Data
 {
-    internal enum DataLoadResult
-    {
-        NoFile,
-        Current,
-        Backup,
-        Unreadable,
-        DefaultsChanged
-    }
-
-    /// <summary>
-    /// One container of the data service: the asset with the defaults, the copy that holds the current values,
-    /// and what was last read from or written to its file.
-    /// </summary>
+    // One container of the data service: the asset with the defaults, the copy that holds the current values,
+    // and what was last read from or written to its file.
     internal sealed class DataContainerSlot
     {
         public DataContainer Source { get; }
@@ -34,7 +23,9 @@ namespace AngryKoala.Data
         public bool HasFile { get; private set; }
 
         private string _lastJson;
+        private int _loadedVersion;
         private bool _wasMigrated;
+        private bool _hasUnreadableFile;
 
         private static readonly DataFileKind[] _fileKinds = { DataFileKind.Current, DataFileKind.Backup };
 
@@ -47,9 +38,7 @@ namespace AngryKoala.Data
             Obfuscate = attribute.Obfuscate;
         }
 
-        /// <summary>
-        /// Makes the copy of an asset. Returns false with a reason when the asset's class has no DataFile attribute.
-        /// </summary>
+        // Makes the copy of an asset. Returns false with a reason when the asset's class cannot be a container.
         public static bool TryCreate(DataContainer source, out DataContainerSlot slot, out string error)
         {
             if (source == null)
@@ -69,6 +58,14 @@ namespace AngryKoala.Data
                 return false;
             }
 
+            string fileName = string.IsNullOrEmpty(attribute.FileName) ? type.Name : attribute.FileName;
+
+            if (!DataStorage.IsValidFileName(fileName))
+            {
+                error = $"{type.Name} has the file name \"{fileName}\", which cannot be used as a file name.";
+                return false;
+            }
+
             DataContainer container = UnityEngine.Object.Instantiate(source);
             container.name = source.name;
 
@@ -78,17 +75,14 @@ namespace AngryKoala.Data
             return true;
         }
 
-        /// <summary>
-        /// Whether this container is read from and written to the device. Build-only containers are, in
-        /// development builds, so that tuning done on a device survives a restart.
-        /// </summary>
+        // Build-only containers use a file in development builds, so that tuning done on a device survives a restart.
         public bool UsesFile(bool isDevelopmentBuild)
         {
             return Persistence switch
             {
                 DataPersistence.Saved => true,
                 DataPersistence.BuildOnly => isDevelopmentBuild,
-                _ => throw new ArgumentOutOfRangeException()
+                _ => throw new ArgumentOutOfRangeException(nameof(Persistence))
             };
         }
 
@@ -99,6 +93,8 @@ namespace AngryKoala.Data
             return isMissingItsFile || !string.Equals(Container.ToSaveJson(), _lastJson, StringComparison.Ordinal);
         }
 
+        // Starts from the defaults and reads the file, falling back to the backup. Deletes nothing: when the
+        // result is DefaultsChanged the caller decides whether the outdated file goes.
         public DataLoadResult Load(DataStorage storage)
         {
             if (storage == null)
@@ -107,6 +103,8 @@ namespace AngryKoala.Data
             }
 
             DataLoadResult result = LoadFromFiles(storage);
+
+            _hasUnreadableFile = result == DataLoadResult.Backup || result == DataLoadResult.Unreadable;
 
             bool needsRewrite = result == DataLoadResult.Backup || _wasMigrated;
             _lastJson = needsRewrite ? null : Container.ToSaveJson();
@@ -136,7 +134,6 @@ namespace AngryKoala.Data
                 {
                     if (IsMadeFromOtherDefaults(content))
                     {
-                        storage.Delete(FileName);
                         return DataLoadResult.DefaultsChanged;
                     }
 
@@ -160,26 +157,34 @@ namespace AngryKoala.Data
                 throw new ArgumentNullException(nameof(storage));
             }
 
-            string json = Container.ToSaveJson();
-            var content = new DataFileContent(Container.CurrentVersion, GetDefaultsChecksum(), json);
+            // A save made by a newer build keeps its version number, so that build does not migrate it twice.
+            int version = Math.Max(_loadedVersion, Container.CurrentVersion);
 
-            storage.Write(FileName, Obfuscate, content);
+            string json = Container.ToSaveJson();
+            var content = new DataFileContent(version, GetDefaultsChecksum(), json);
+
+            // A current file that could not be read must not replace the backup, which may be the last good save.
+            DataReplaceRule replaceRule =
+                _hasUnreadableFile ? DataReplaceRule.SetAside : DataReplaceRule.KeepAsBackup;
+
+            storage.Write(FileName, Obfuscate, content, replaceRule);
 
             HasFile = true;
+            _hasUnreadableFile = false;
             _lastJson = json;
         }
 
         public void ResetToDefaults()
         {
             Container.CopyValuesFrom(Source);
+            _loadedVersion = 0;
         }
 
-        /// <summary>
-        /// Forgets the file: used after it was deleted, so that the next save compares against the current values.
-        /// </summary>
+        // Used after the file was deleted, so that the next save compares against the current values.
         public void MarkFileDeleted()
         {
             HasFile = false;
+            _hasUnreadableFile = false;
             _lastJson = Container.ToSaveJson();
         }
 
@@ -222,6 +227,8 @@ namespace AngryKoala.Data
                 return false;
             }
 
+            _loadedVersion = content.Version;
+
             if (content.Version < Container.CurrentVersion)
             {
                 Migrate(content);
@@ -253,10 +260,8 @@ namespace AngryKoala.Data
             _wasMigrated = true;
         }
 
-        /// <summary>
-        /// A build-only container remembers which defaults its saved values were made from. Saved containers
-        /// keep their values whatever the defaults become.
-        /// </summary>
+        // A build-only container remembers which defaults its saved values were made from. Saved containers
+        // keep their values whatever the defaults become.
         private string GetDefaultsChecksum()
         {
             if (Persistence != DataPersistence.BuildOnly)
@@ -264,8 +269,8 @@ namespace AngryKoala.Data
                 return string.Empty;
             }
 
-            using MD5 md5 = MD5.Create();
-            byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(Source.ToSaveJson()));
+            using MD5 hashAlgorithm = MD5.Create();
+            byte[] hash = hashAlgorithm.ComputeHash(Encoding.UTF8.GetBytes(Source.ToSaveJson()));
 
             var builder = new StringBuilder(hash.Length * 2);
 

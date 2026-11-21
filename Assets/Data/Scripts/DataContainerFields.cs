@@ -5,9 +5,7 @@ using UnityEngine;
 
 namespace AngryKoala.Data
 {
-    /// <summary>
-    /// Finds the fields of a container class that can be shown as debug options, and names them.
-    /// </summary>
+    // Finds the fields of a container class that can be shown as debug options, and names them.
     internal static class DataContainerFields
     {
         private static readonly HashSet<Type> _optionTypes = new()
@@ -24,10 +22,8 @@ namespace AngryKoala.Data
             typeof(string)
         };
 
-        /// <summary>
-        /// The private serialized fields of the class and its base classes up to DataContainer, base class first,
-        /// in the order they are written.
-        /// </summary>
+        // The private serialized fields of the class and its base classes up to DataContainer, base class first,
+        // in the order they are written.
         public static void GetOptionFields(Type containerType, List<FieldInfo> results)
         {
             if (containerType == null)
