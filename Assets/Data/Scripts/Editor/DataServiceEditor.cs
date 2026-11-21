@@ -274,7 +274,8 @@ namespace AngryKoala.Data
                     continue;
                 }
 
-                slot.Container.hideFlags = HideFlags.HideAndDontSave;
+                // Not HideAndDontSave: that includes NotEditable, which draws every field of the copy disabled.
+                slot.Container.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
 
                 var view = new ContainerView(slot, slot.Container, GetLabel(asset.GetType(), slot.Persistence),
                     slot.Persistence);
@@ -343,6 +344,9 @@ namespace AngryKoala.Data
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             {
+                // One level in, so the foldout arrow sits inside the box and not on its border.
+                EditorGUI.indentLevel++;
+
                 bool newExpanded = EditorGUILayout.Foldout(isExpanded, view.Label, toggleOnLabelClick: true);
 
                 if (newExpanded != isExpanded)
@@ -368,6 +372,8 @@ namespace AngryKoala.Data
 
                     DrawViewButtons(view);
                 }
+
+                EditorGUI.indentLevel--;
             }
             EditorGUILayout.EndVertical();
         }
@@ -641,7 +647,8 @@ namespace AngryKoala.Data
 
             SerializedProperty iterator = serializedAsset.GetIterator();
 
-            while (iterator.Next(true))
+            // Visible properties only: every object has hidden references of Unity's own.
+            while (iterator.NextVisible(true))
             {
                 if (iterator.propertyType == SerializedPropertyType.ObjectReference &&
                     iterator.propertyPath != _scriptPropertyPath)
