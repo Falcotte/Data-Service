@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using AngryKoala.Services;
 using SRDebugger;
+using SRDebugger.Services;
 using SRF.Helpers;
 using UnityEngine;
 
@@ -16,17 +17,22 @@ namespace AngryKoala.Data
     {
         private static DynamicOptionContainer _optionContainer;
         private static IDataService _dataService;
+        private static bool _isQuitting;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
             _optionContainer = null;
             _dataService = null;
+            _isQuitting = false;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Initialize()
         {
+            Application.quitting -= OnApplicationQuitting;
+            Application.quitting += OnApplicationQuitting;
+
             ServiceLocator.OnServiceRegistered += OnServiceRegistered;
             ServiceLocator.OnServiceDeregistered += OnServiceDeregistered;
 
@@ -34,6 +40,11 @@ namespace AngryKoala.Data
             {
                 AddOptions(dataService);
             }
+        }
+
+        private static void OnApplicationQuitting()
+        {
+            _isQuitting = true;
         }
 
         private static void OnServiceRegistered(Type type, IService service)
@@ -76,9 +87,15 @@ namespace AngryKoala.Data
 
         private static void RemoveOptions()
         {
-            if (_optionContainer != null && SRDebug.IsInitialized)
+            // While the application quits SRDebugger is going away too, and asking for it would create it again.
+            if (_optionContainer != null && !_isQuitting && SRDebug.IsInitialized)
             {
-                SRDebug.Instance.RemoveOptionContainer(_optionContainer);
+                IDebugService debugService = SRDebug.Instance;
+
+                if (debugService != null)
+                {
+                    debugService.RemoveOptionContainer(_optionContainer);
+                }
             }
 
             _optionContainer = null;
