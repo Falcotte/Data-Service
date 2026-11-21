@@ -238,6 +238,29 @@ namespace AngryKoala.Data
             }
         }
 
+        #region Internal Methods
+
+        /// <summary>
+        /// For the inspector, which has a runtime copy in hand and no type argument.
+        /// </summary>
+        internal void SaveInternal(DataContainer container)
+        {
+            if (container != null && _slotsByType.TryGetValue(container.GetType(), out DataContainerSlot slot))
+            {
+                SaveSlot(slot);
+            }
+        }
+
+        internal void ResetInternal(DataContainer container)
+        {
+            if (container != null && _slotsByType.TryGetValue(container.GetType(), out DataContainerSlot slot))
+            {
+                ResetSlot(slot);
+            }
+        }
+
+        #endregion
+
         private bool TryGetSlot<T>(out DataContainerSlot slot) where T : DataContainer
         {
             if (_slotsByType.TryGetValue(typeof(T), out slot))

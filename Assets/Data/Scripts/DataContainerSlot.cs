@@ -116,6 +116,8 @@ namespace AngryKoala.Data
 
         private DataLoadResult LoadFromFiles(DataStorage storage)
         {
+            ResetToDefaults();
+
             HasFile = false;
             _wasMigrated = false;
 
