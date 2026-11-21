@@ -9,15 +9,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 46051ec88f1cd3745a47f257a9f111a2, type: 3}
+  m_Script: {fileID: 11500000, guid: e8dc6ccb507d9cf4ab9dc8859ded385f, type: 3}
   m_Name: PlayerData
-  m_EditorClassIdentifier: 
-  _level: 0
-  _score: 0
+  m_EditorClassIdentifier: Assembly-CSharp::AngryKoala.Data.Demo.PlayerData
   _srDataOptions:
   - _propertyName: Level
     _settings:
-      _enabled: 0
+      _enabled: 1
       _category: Player Data
       _displayName: Level
       _sort: 0
@@ -37,3 +35,29 @@ MonoBehaviour:
         _min: 0
         _max: 1
       _increment: 1
+  - _propertyName: Lives
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Lives
+      _sort: 2
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  - _propertyName: Currency
+    _settings:
+      _enabled: 0
+      _category: Player Data
+      _displayName: Currency
+      _sort: 3
+      _numberRange:
+        _enabled: 0
+        _min: 0
+        _max: 1
+      _increment: 1
+  _level: 1
+  _score: 0
+  _lives: 5
+  _currency: 0

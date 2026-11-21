@@ -9,12 +9,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cfb2ea04c2fbbcb46a4685971160c8e8, type: 3}
-  m_Name: DefaultSettingsData
-  m_EditorClassIdentifier: 
-  _musicEnabled: 1
-  _soundEnabled: 1
-  _vibrationEnabled: 1
+  m_Script: {fileID: 11500000, guid: 31a235780831bd941980196a7476840f, type: 3}
+  m_Name: SettingsData
+  m_EditorClassIdentifier: Assembly-CSharp::AngryKoala.Data.Demo.SettingsData
   _srDataOptions:
   - _propertyName: MusicEnabled
     _settings:
@@ -49,3 +46,6 @@ MonoBehaviour:
         _min: 0
         _max: 1
       _increment: 1
+  _musicEnabled: 1
+  _soundEnabled: 1
+  _vibrationEnabled: 1

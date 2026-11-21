@@ -9,22 +9,20 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d527d75038e125143bddf11b64c4f7eb, type: 3}
-  m_Name: DefaultGameData
-  m_EditorClassIdentifier: 
-  _maxLifeCount: 0
-  _lifeReplenishDuration: 0
+  m_Script: {fileID: 11500000, guid: 9a96a5ac34c1cf74b81a0e76261b3c2c, type: 3}
+  m_Name: GameData
+  m_EditorClassIdentifier: Assembly-CSharp::AngryKoala.Data.Demo.GameData
   _srDataOptions:
   - _propertyName: MaxLifeCount
     _settings:
-      _enabled: 0
+      _enabled: 1
       _category: Game Data
       _displayName: Max Life Count
       _sort: 0
       _numberRange:
-        _enabled: 0
-        _min: 0
-        _max: 1
+        _enabled: 1
+        _min: 1
+        _max: 10
       _increment: 1
   - _propertyName: LifeReplenishDuration
     _settings:
@@ -37,3 +35,5 @@ MonoBehaviour:
         _min: 0
         _max: 1
       _increment: 1
+  _maxLifeCount: 5
+  _lifeReplenishDuration: 30

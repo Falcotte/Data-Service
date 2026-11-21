@@ -256,15 +256,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _autoRegister: 1
-  _initialPlayerData: {fileID: 11400000, guid: 1ce5e834e2892bb4ebadcdf5c4ca4fae, type: 2}
-  _playerData: {fileID: 11400000, guid: b2e3c69b3490e374ba7a1c76b32aa7b8, type: 2}
-  _defaultGameData: {fileID: 11400000, guid: cef9fa5fc5236f94c970aff6cf691a7a, type: 2}
-  _gameData: {fileID: 11400000, guid: bb09e972992cfa343b09242aa6eb06c7, type: 2}
-  _defaultSettingsData: {fileID: 11400000, guid: 6cb5bc8371f694e439fbbbae1ee531a0, type: 2}
-  _settingsData: {fileID: 11400000, guid: c829933eb0d5d8a40a4734f05fa02cd7, type: 2}
-  _serializationFormat: 0
-  _useEncryption: 0
-  _encryptionPassword: Password
+  _containers:
+  - {fileID: 11400000, guid: cede720aa55d66149826384b372e00be, type: 2}
+  - {fileID: 11400000, guid: dd2f26d50e453de4095e5a8de1379da6, type: 2}
+  - {fileID: 11400000, guid: fe397545c921c124083720bbef416608, type: 2}
+  _obfuscationKey: 
+  _saveOnPause: 1
+  _verbose: 0
 --- !u!1 &522098481
 GameObject:
   m_ObjectHideFlags: 0
@@ -290,14 +288,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 522098481}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 13
   m_Type: 1
   m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
   m_Intensity: 1
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 2
     m_Resolution: -1
@@ -342,7 +340,7 @@ Light:
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
-  m_ShadowRadius: 0
+  m_ShapeRadius: 0
   m_ShadowAngle: 0
   m_LightUnit: 1
   m_LuxAtDistance: 1
