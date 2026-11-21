@@ -28,6 +28,11 @@ namespace AngryKoala.Data
         private const string _scriptPropertyPath = "m_Script";
         private const string _srOptionsPropertyPath = "_srDataOptions";
 
+        // The button row below the notes brings about 6 px of margin of its own, so the space above the notes
+        // is that much larger for the two gaps to look the same.
+        private const float _spaceAboveNotes = 10f;
+        private const float _spaceBelowNotes = 4f;
+
         private void OnEnable()
         {
             _scriptProperty = serializedObject.FindProperty(_scriptPropertyPath);
@@ -318,7 +323,11 @@ namespace AngryKoala.Data
 
             if (_views.Count == 0)
             {
-                _noteStyle ??= new GUIStyle(EditorStyles.miniLabel) { wordWrap = true };
+                _noteStyle ??= new GUIStyle(EditorStyles.miniLabel)
+                {
+                    wordWrap = true,
+                    alignment = TextAnchor.MiddleLeft
+                };
 
                 EditorGUILayout.LabelField(
                     Application.isPlaying ? "The service holds no containers." : "No container in the list can be shown.",
@@ -414,7 +423,16 @@ namespace AngryKoala.Data
 
         private void DrawViewNotes(ContainerView view)
         {
-            _noteStyle ??= new GUIStyle(EditorStyles.miniLabel) { wordWrap = true };
+            _noteStyle ??= new GUIStyle(EditorStyles.miniLabel)
+            {
+                wordWrap = true,
+                alignment = TextAnchor.MiddleLeft
+            };
+
+            // The notes line up with the field labels above them, with the same air above and below. The text is
+            // centred in its line: a mini label otherwise sits at the top of it, which made the gap above look smaller.
+            EditorGUILayout.Space(_spaceAboveNotes);
+            EditorGUI.indentLevel++;
 
             EditorGUILayout.LabelField(view.Status, _noteStyle);
 
@@ -424,6 +442,9 @@ namespace AngryKoala.Data
                     "Its values are saved in development builds and the Editor only, and dropped when the " +
                     "asset's defaults change.", _noteStyle);
             }
+
+            EditorGUI.indentLevel--;
+            EditorGUILayout.Space(_spaceBelowNotes);
         }
 
         private void DrawViewButtons(ContainerView view)
