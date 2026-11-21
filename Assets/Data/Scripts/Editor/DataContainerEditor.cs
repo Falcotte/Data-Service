@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -7,6 +10,8 @@ namespace AngryKoala.Data
     public sealed class DataContainerEditor : Editor
     {
 #if SRDEBUGGER
+        private readonly Dictionary<string, FieldInfo> _optionFields = new(StringComparer.Ordinal);
+
         private SerializedProperty _srOptionsProperty;
 
         private GUIContent _categoryContent;
@@ -29,6 +34,8 @@ namespace AngryKoala.Data
             }
 
             _srOptionsProperty = serializedObject.FindProperty(_srOptionsPropertyPath);
+
+            CacheOptionFields();
 #endif
         }
 
@@ -87,9 +94,23 @@ namespace AngryKoala.Data
         }
 
 #if SRDEBUGGER
+        private void CacheOptionFields()
+        {
+            var fields = new List<FieldInfo>();
+            DataContainerFields.GetOptionFields(target.GetType(), fields);
+
+            _optionFields.Clear();
+
+            foreach (FieldInfo field in fields)
+            {
+                _optionFields[field.Name] = field;
+            }
+        }
+
         private bool TryDrawWithOptions(SerializedProperty property)
         {
-            if (_srOptionsProperty == null || !IsSupportedType(property))
+            // Only a field that can become an option gets the tick box, the other fields are drawn as they are.
+            if (_srOptionsProperty == null || !_optionFields.TryGetValue(property.name, out FieldInfo field))
             {
                 return false;
             }
@@ -125,7 +146,7 @@ namespace AngryKoala.Data
                         _displayNameContent);
                     EditorGUILayout.PropertyField(settingsProperty.FindPropertyRelative("_sort"), _sortContent);
 
-                    if (IsNumericType(property))
+                    if (DataContainerFields.IsNumericType(field.FieldType))
                     {
                         DrawNumberSettings(settingsProperty);
                     }
@@ -219,32 +240,6 @@ namespace AngryKoala.Data
             numberRangeProperty.FindPropertyRelative("_enabled").boolValue = false;
             numberRangeProperty.FindPropertyRelative("_min").doubleValue = 0d;
             numberRangeProperty.FindPropertyRelative("_max").doubleValue = 1d;
-        }
-
-        private static bool IsSupportedType(SerializedProperty property)
-        {
-            switch (property.propertyType)
-            {
-                case SerializedPropertyType.Boolean:
-                case SerializedPropertyType.Integer:
-                case SerializedPropertyType.Float:
-                case SerializedPropertyType.String:
-                case SerializedPropertyType.Enum:
-                {
-                    return true;
-                }
-
-                default:
-                {
-                    return false;
-                }
-            }
-        }
-
-        private static bool IsNumericType(SerializedProperty property)
-        {
-            return property.propertyType == SerializedPropertyType.Integer ||
-                   property.propertyType == SerializedPropertyType.Float;
         }
 #endif
     }

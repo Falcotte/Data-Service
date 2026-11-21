@@ -74,6 +74,9 @@ namespace AngryKoala.Data
             DrawFolderButtons();
         }
 
+        // The runtime values change while the game runs.
+        public override bool RequiresConstantRepaint() => Application.isPlaying;
+
         private void OnPlayModeStateChanged(PlayModeStateChange state)
         {
             DestroyViews();
@@ -122,7 +125,15 @@ namespace AngryKoala.Data
 
             for (int i = 0; i < _containersProperty.arraySize; i++)
             {
-                hash.Add(_containersProperty.GetArrayElementAtIndex(i).objectReferenceValue);
+                UnityEngine.Object asset = _containersProperty.GetArrayElementAtIndex(i).objectReferenceValue;
+
+                hash.Add(asset);
+
+                // Editing a default asset changes its dirty count, so that its view is built again.
+                if (!Application.isPlaying && asset != null)
+                {
+                    hash.Add(EditorUtility.GetDirtyCount(asset));
+                }
             }
 
             foreach (DataContainer container in _runtimeContainers)
@@ -166,6 +177,7 @@ namespace AngryKoala.Data
 
             bool hasKey = !string.IsNullOrEmpty(_obfuscationKeyProperty.stringValue);
             var seenTypes = new HashSet<Type>();
+            var seenFileNames = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
 
             for (int i = 0; i < _containersProperty.arraySize; i++)
             {
@@ -186,14 +198,27 @@ namespace AngryKoala.Data
                     continue;
                 }
 
-                var attribute = type.GetCustomAttribute<DataFileAttribute>(inherit: false);
-
-                if (attribute == null)
+                // The slot knows why a class cannot be a container. Its copy is only needed for that.
+                if (!DataContainerSlot.TryCreate(asset, out DataContainerSlot slot, out string error))
                 {
-                    _problems.Add(($"{type.Name} has no [DataFile] attribute, so the service cannot tell whether " +
-                                   "to save it.", MessageType.Error));
+                    _problems.Add((error, MessageType.Error));
                     continue;
                 }
+
+                string fileName = slot.FileName;
+                slot.DestroyContainer();
+
+                if (seenFileNames.TryGetValue(fileName, out Type otherType))
+                {
+                    _problems.Add(($"{type.Name} and {otherType.Name} have the file name \"{fileName}\", which is " +
+                                   $"the same when the case is ignored. The service refuses {type.Name} at start.",
+                        MessageType.Error));
+                    continue;
+                }
+
+                seenFileNames.Add(fileName, type);
+
+                var attribute = type.GetCustomAttribute<DataFileAttribute>(inherit: false);
 
                 if (attribute.Obfuscate && !hasKey)
                 {
@@ -201,11 +226,9 @@ namespace AngryKoala.Data
                                    "It is saved as plain text.", MessageType.Warning));
                 }
 
-                if (attribute.Persistence == DataPersistence.Saved &&
-                    TryFindObjectReference(asset, out string propertyPath))
+                if (TryFindObjectReference(asset, out string propertyPath))
                 {
-                    _problems.Add(($"{type.Name} is saved and has a reference to a Unity object ({propertyPath}). " +
-                                   "Such a reference is written as an id that means nothing in the next session.",
+                    _problems.Add((GetObjectReferenceMessage(type, attribute.Persistence, propertyPath),
                         MessageType.Warning));
                 }
             }
@@ -275,6 +298,8 @@ namespace AngryKoala.Data
                     target);
                 Debug.LogException(exception, target);
             }
+
+            view.RefreshNeedsWrite();
         }
 
         private void DrawProblems()
@@ -352,6 +377,7 @@ namespace AngryKoala.Data
             view.SerializedObject.Update();
 
             EditorGUI.indentLevel++;
+            EditorGUI.BeginChangeCheck();
 
             SerializedProperty iterator = view.SerializedObject.GetIterator();
             bool enterChildren = true;
@@ -368,9 +394,16 @@ namespace AngryKoala.Data
                 EditorGUILayout.PropertyField(iterator, includeChildren: true);
             }
 
+            bool hasChanged = EditorGUI.EndChangeCheck();
+
             EditorGUI.indentLevel--;
 
             view.SerializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+            if (hasChanged)
+            {
+                view.RefreshNeedsWrite();
+            }
         }
 
         private void DrawViewNotes(ContainerView view)
@@ -398,14 +431,14 @@ namespace AngryKoala.Data
                         ((DataService)target).SaveInternal(view.Container);
                     }
 
-                    if (GUILayout.Button("Reset") && ConfirmReset(view))
+                    if (GUILayout.Button("Reset"))
                     {
-                        ((DataService)target).ResetInternal(view.Container);
+                        ResetAfterConfirmation(view);
                     }
                 }
                 else
                 {
-                    EditorGUI.BeginDisabledGroup(!view.Slot.NeedsWrite());
+                    EditorGUI.BeginDisabledGroup(!view.NeedsWrite);
 
                     if (GUILayout.Button("Save"))
                     {
@@ -419,9 +452,9 @@ namespace AngryKoala.Data
                         ReloadView(view);
                     }
 
-                    if (GUILayout.Button("Reset") && ConfirmReset(view))
+                    if (GUILayout.Button("Reset"))
                     {
-                        ResetView(view);
+                        ResetAfterConfirmation(view);
                     }
                 }
             }
@@ -440,6 +473,8 @@ namespace AngryKoala.Data
                 Debug.LogError($"DataService: {view.Container.GetType().Name} could not be saved.", target);
                 Debug.LogException(exception, target);
             }
+
+            view.RefreshNeedsWrite();
         }
 
         private void ReloadView(ContainerView view)
@@ -473,7 +508,7 @@ namespace AngryKoala.Data
 
                     default:
                     {
-                        throw new ArgumentOutOfRangeException();
+                        throw new ArgumentOutOfRangeException(nameof(view.Persistence));
                     }
                 }
 
@@ -484,13 +519,30 @@ namespace AngryKoala.Data
                 Debug.LogError($"DataService: {view.Container.GetType().Name} could not be reset.", target);
                 Debug.LogException(exception, target);
             }
+
+            view.RefreshNeedsWrite();
         }
 
-        private static bool ConfirmReset(ContainerView view)
+        private void ResetAfterConfirmation(ContainerView view)
         {
-            return EditorUtility.DisplayDialog($"Reset {view.Container.GetType().Name}",
+            bool isConfirmed = EditorUtility.DisplayDialog($"Reset {view.Container.GetType().Name}",
                 "This replaces the current values with the defaults of the asset and updates the saved file. " +
                 "Are you sure?", "Yes", "No");
+
+            if (isConfirmed)
+            {
+                if (view.Slot == null)
+                {
+                    ((DataService)target).ResetInternal(view.Container);
+                }
+                else
+                {
+                    ResetView(view);
+                }
+            }
+
+            // The dialog ran inside a layout group, so the rest of this event must not be drawn.
+            GUIUtility.ExitGUI();
         }
 
         private void DrawFolderButtons()
@@ -534,13 +586,21 @@ namespace AngryKoala.Data
 
         private void DeleteSavedFiles()
         {
-            if (!EditorUtility.DisplayDialog("Delete Saved Files",
-                    "This deletes the saved file, the backup and the temporary file of every container in the " +
-                    "list. This cannot be undone. Are you sure?", "Delete", "Cancel"))
+            bool isConfirmed = EditorUtility.DisplayDialog("Delete Saved Files",
+                "This deletes the saved file, the backup and the temporary file of every container in the " +
+                "list. This cannot be undone. Are you sure?", "Delete", "Cancel");
+
+            if (isConfirmed)
             {
-                return;
+                DeleteViewFiles();
             }
 
+            // The dialog ran inside a layout group, so the rest of this event must not be drawn.
+            GUIUtility.ExitGUI();
+        }
+
+        private void DeleteViewFiles()
+        {
             DataStorage storage = CreateStorage();
 
             foreach (ContainerView view in _views)
@@ -594,6 +654,20 @@ namespace AngryKoala.Data
             return false;
         }
 
+        private static string GetObjectReferenceMessage(Type type, DataPersistence persistence, string propertyPath)
+        {
+            return persistence switch
+            {
+                DataPersistence.Saved =>
+                    $"{type.Name} is saved and has a reference to a Unity object ({propertyPath}). " +
+                    "Such a reference is written as an id that means nothing in the next session.",
+                DataPersistence.BuildOnly =>
+                    $"{type.Name} is build-only and has a reference to a Unity object ({propertyPath}). " +
+                    "Its checksum changes every session, so the saved tuning is dropped at every start.",
+                _ => throw new ArgumentOutOfRangeException(nameof(persistence))
+            };
+        }
+
         private static string GetLabel(Type type, DataPersistence persistence)
         {
             string kind = persistence switch
@@ -615,7 +689,8 @@ namespace AngryKoala.Data
                 DataLoadResult.Backup => "The saved file could not be read, the backup was loaded.",
                 DataLoadResult.Unreadable => "Neither the saved file nor its backup can be read, showing the defaults.",
                 DataLoadResult.DefaultsChanged =>
-                    "The defaults changed since the values were saved, the saved values were dropped.",
+                    "The defaults changed since the values were saved. The saved values are outdated and will be " +
+                    "dropped at the next Play.",
                 _ => throw new ArgumentOutOfRangeException(nameof(result))
             };
         }
@@ -634,6 +709,8 @@ namespace AngryKoala.Data
 
             public string Status { get; set; }
 
+            public bool NeedsWrite { get; private set; }
+
             public ContainerView(DataContainerSlot slot, DataContainer container, string label,
                 DataPersistence persistence)
             {
@@ -643,6 +720,9 @@ namespace AngryKoala.Data
                 Label = label;
                 Persistence = persistence;
             }
+
+            // Asking the slot compares the whole container as JSON, so it is not done on every event.
+            public void RefreshNeedsWrite() => NeedsWrite = Slot != null && Slot.NeedsWrite();
         }
     }
 }

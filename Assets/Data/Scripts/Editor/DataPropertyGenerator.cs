@@ -33,6 +33,10 @@ namespace AngryKoala.Data
             { typeof(object), "object" }
         };
 
+        // A line of the generated file that declares a property: "public <type> <Name>".
+        private static readonly Regex _declaredPropertyRegex =
+            new(@"^[ \t]*public[ \t]+(?!partial\b)\S.*[ \t](\w+)[ \t]*\r?$", RegexOptions.Multiline);
+
         [MenuItem("Angry Koala/Data/Generate Properties")]
         private static void GenerateProperties()
         {
@@ -64,9 +68,10 @@ namespace AngryKoala.Data
                 string generatedPath = Path.Combine(Path.GetDirectoryName(scriptPath) ?? string.Empty,
                     type.Name + _generatedFileSuffix);
                 bool hasGeneratedFile = File.Exists(generatedPath);
-                string code = GenerateCode(type, hasGeneratedFile);
+                string existingCode = hasGeneratedFile ? File.ReadAllText(generatedPath) : string.Empty;
+                string code = GenerateCode(type, GetDeclaredPropertyNames(existingCode));
 
-                if (hasGeneratedFile && string.Equals(File.ReadAllText(generatedPath), code, StringComparison.Ordinal))
+                if (hasGeneratedFile && AreEqualIgnoringLineEndings(existingCode, code))
                 {
                     unchangedCount++;
                     continue;
@@ -85,9 +90,44 @@ namespace AngryKoala.Data
                       $"{skippedCount} skipped because the class is not partial.");
         }
 
+        // Writes a property for every field, hand-written properties included.
         internal static string GenerateCode(Type containerType)
         {
-            return GenerateCode(containerType, hasGeneratedFile: true);
+            return GenerateCodeInternal(containerType, null);
+        }
+
+        // Skips a field whose property name is a public property of the class that the generated file does not
+        // declare, because that property is hand-written.
+        internal static string GenerateCode(Type containerType, ISet<string> generatedPropertyNames)
+        {
+            if (generatedPropertyNames == null)
+            {
+                throw new ArgumentNullException(nameof(generatedPropertyNames));
+            }
+
+            return GenerateCodeInternal(containerType, generatedPropertyNames);
+        }
+
+        internal static HashSet<string> GetDeclaredPropertyNames(string generatedCode)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+
+            if (string.IsNullOrEmpty(generatedCode))
+            {
+                return names;
+            }
+
+            foreach (Match match in _declaredPropertyRegex.Matches(generatedCode))
+            {
+                names.Add(match.Groups[1].Value);
+            }
+
+            return names;
+        }
+
+        internal static bool AreEqualIgnoringLineEndings(string first, string second)
+        {
+            return string.Equals(NormalizeLineEndings(first), NormalizeLineEndings(second), StringComparison.Ordinal);
         }
 
         internal static string GetTypeName(Type type)
@@ -110,7 +150,7 @@ namespace AngryKoala.Data
             return GetNamedTypeName(type);
         }
 
-        private static string GenerateCode(Type containerType, bool hasGeneratedFile)
+        private static string GenerateCodeInternal(Type containerType, ISet<string> generatedPropertyNames)
         {
             if (containerType == null)
             {
@@ -138,12 +178,31 @@ namespace AngryKoala.Data
 
             bool isFirstProperty = true;
 
+            HashSet<string> inheritedNames = GetInheritedMemberNames(containerType);
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (FieldInfo field in GetPropertyFields(containerType))
             {
                 string propertyName = DataContainerFields.GetPropertyName(field.Name);
+                string skipReason = GetSkipReason(containerType, field, propertyName, inheritedNames);
 
-                if (!hasGeneratedFile && HasPublicProperty(containerType, propertyName))
+                if (skipReason != null)
                 {
+                    Debug.LogWarning($"DataPropertyGenerator: {containerType.Name}.{field.Name} is skipped, " +
+                                     skipReason);
+                    continue;
+                }
+
+                if (generatedPropertyNames != null && !generatedPropertyNames.Contains(propertyName) &&
+                    HasPublicProperty(containerType, propertyName))
+                {
+                    continue;
+                }
+
+                if (!usedNames.Add(propertyName))
+                {
+                    Debug.LogWarning($"DataPropertyGenerator: {containerType.Name}.{field.Name} is skipped, " +
+                                     $"an earlier field already produces the property \"{propertyName}\".");
                     continue;
                 }
 
@@ -204,9 +263,97 @@ namespace AngryKoala.Data
             return fields;
         }
 
+        private static string GetSkipReason(Type containerType, FieldInfo field, string propertyName,
+            HashSet<string> inheritedNames)
+        {
+            if (!IsValidIdentifier(propertyName))
+            {
+                return $"\"{propertyName}\" is not a valid C# identifier.";
+            }
+
+            if (string.Equals(propertyName, containerType.Name, StringComparison.Ordinal))
+            {
+                return $"the property name \"{propertyName}\" is the name of the class.";
+            }
+
+            if (string.Equals(propertyName, field.Name, StringComparison.Ordinal))
+            {
+                return $"the property name \"{propertyName}\" is the name of the field.";
+            }
+
+            if (inheritedNames.Contains(propertyName))
+            {
+                return $"the property name \"{propertyName}\" is already a member of a base class.";
+            }
+
+            return null;
+        }
+
+        private static bool IsValidIdentifier(string identifier)
+        {
+            if (string.IsNullOrEmpty(identifier) || !(char.IsLetter(identifier[0]) || identifier[0] == '_'))
+            {
+                return false;
+            }
+
+            foreach (char character in identifier)
+            {
+                if (!char.IsLetterOrDigit(character) && character != '_')
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // The names of the public and protected instance members that the class inherits.
+        private static HashSet<string> GetInheritedMemberNames(Type containerType)
+        {
+            const BindingFlags bindingFlags =
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            var names = new HashSet<string>(StringComparer.Ordinal);
+
+            for (Type baseType = containerType.BaseType; baseType != null; baseType = baseType.BaseType)
+            {
+                foreach (MemberInfo member in baseType.GetMembers(bindingFlags))
+                {
+                    if (IsVisibleToDerivedClasses(member))
+                    {
+                        names.Add(member.Name);
+                    }
+                }
+            }
+
+            return names;
+        }
+
+        private static bool IsVisibleToDerivedClasses(MemberInfo member)
+        {
+            return member switch
+            {
+                FieldInfo field => field.IsPublic || field.IsFamily || field.IsFamilyOrAssembly,
+                MethodBase method => IsAccessibleToDerivedClasses(method),
+                PropertyInfo property => Array.Exists(property.GetAccessors(true), IsAccessibleToDerivedClasses),
+                EventInfo eventInfo => IsAccessibleToDerivedClasses(eventInfo.GetAddMethod(true)),
+                _ => false
+            };
+        }
+
+        private static bool IsAccessibleToDerivedClasses(MethodBase method)
+        {
+            return method != null && (method.IsPublic || method.IsFamily || method.IsFamilyOrAssembly);
+        }
+
         private static bool HasPublicProperty(Type containerType, string propertyName)
         {
             return containerType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public) != null;
+        }
+
+        private static string NormalizeLineEndings(string text)
+        {
+            return text.Replace("\r\n", "\n");
         }
 
         private static string GetNamedTypeName(Type type)
@@ -236,10 +383,10 @@ namespace AngryKoala.Data
                     builder.Append('.');
                 }
 
-                string name = chain[i].Name;
-                int backtickIndex = name.IndexOf('`');
+                string typeName = chain[i].Name;
+                int backtickIndex = typeName.IndexOf('`');
 
-                builder.Append(backtickIndex >= 0 ? name.Substring(0, backtickIndex) : name);
+                builder.Append(backtickIndex >= 0 ? typeName.Substring(0, backtickIndex) : typeName);
 
                 // A nested type of a generic class repeats the arguments of the classes around it.
                 int ownArgumentCount = chain[i].GetGenericArguments().Length -
