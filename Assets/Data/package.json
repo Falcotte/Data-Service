@@ -1,0 +1,13 @@
+{
+    "name": "com.angrykoala.data",
+    "version": "2.0.0",
+    "displayName": "Angry Koala Data",
+    "description": "A data service for Unity: the game's own ScriptableObject data classes, loaded and saved safely, with defaults, versions, save on pause and an optional SRDebugger page.",
+    "unity": "6000.3",
+    "author": {
+        "name": "Angry Koala"
+    },
+    "dependencies": {
+        "com.angrykoala.services": "2.0.0"
+    }
+}
