@@ -1,133 +1,492 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
+using System.Text.RegularExpressions;
+using AngryKoala.Services;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using Object = UnityEngine.Object;
 
 namespace AngryKoala.Data.Tests
 {
     public sealed class DataServiceTests
     {
-        private GameObject _serviceObject;
+        private readonly List<Object> _createdObjects = new();
 
-        private static string DataPath => Path.Combine(Application.persistentDataPath, "Data");
-        private static string PlayerDataPath => Path.Combine(DataPath, "PlayerData.dat");
-        private static string GameDataPath => Path.Combine(DataPath, "GameData.dat");
+        private GameObject _serviceObject;
+        private string _folderPath;
+
+        private const string _obfuscationKey = "test key";
+        private const string _cutOffFileText = "{\"Version\":1,\"DefaultsChecksum\":\"\"}\n{\"_level\":7,\"_playe";
 
         [SetUp]
         public void SetUp()
         {
-            DeleteSavedFiles();
+            _folderPath = Path.Combine(Application.temporaryCachePath, "AngryKoalaDataTests",
+                Guid.NewGuid().ToString("N"));
         }
 
         [TearDown]
         public void TearDown()
         {
             DestroyService();
-            DeleteSavedFiles();
+
+            foreach (Object createdObject in _createdObjects)
+            {
+                if (createdObject != null)
+                {
+                    Object.DestroyImmediate(createdObject);
+                }
+            }
+
+            _createdObjects.Clear();
+
+            if (Directory.Exists(_folderPath))
+            {
+                Directory.Delete(_folderPath, recursive: true);
+            }
         }
 
         [Test]
-        public void Start_WithSavedPlayerData_LeavesTheObjectItWasGivenUnchanged()
+        public void Get_ReturnsACopyWithTheAssetsValues_NotTheAsset()
         {
-            PlayerData firstSessionData = CreateData<PlayerData>();
-            StartService(firstSessionData, CreateData<GameData>(), CreateData<SettingsData>());
-            SetValue(firstSessionData, "_level", 7);
-            _serviceObject.GetComponent<DataService>().SavePlayerData();
-            DestroyService();
+            TestPlayerData asset = CreateAsset<TestPlayerData>();
+            asset.Level = 4;
 
-            PlayerData secondSessionData = CreateData<PlayerData>();
-            StartService(secondSessionData, CreateData<GameData>(), CreateData<SettingsData>());
+            DataService service = StartService(asset);
+            TestPlayerData playerData = service.Get<TestPlayerData>();
 
-            Assert.AreEqual(0, GetValue<int>(secondSessionData, "_level"),
-                "Loading wrote the saved value into the object the service was given.");
+            Assert.AreNotSame(asset, playerData);
+            Assert.AreEqual(4, playerData.Level);
         }
 
         [Test]
-        public void Start_WithSavedGameDataAndChangedDefault_UsesTheNewDefault()
+        public void Start_WithSavedValues_LoadsThemAndLeavesTheAssetUnchanged()
         {
-            GameData firstDefault = CreateData<GameData>();
-            SetValue(firstDefault, "_maxLifeCount", 3);
-            StartService(CreateData<PlayerData>(), CreateData<GameData>(), CreateData<SettingsData>(),
-                defaultGameData: firstDefault);
+            SaveLevel(7);
+
+            TestPlayerData asset = CreateAsset<TestPlayerData>();
+            DataService service = StartService(asset);
+
+            Assert.AreEqual(7, service.Get<TestPlayerData>().Level);
+            Assert.AreEqual(0, asset.Level, "Loading wrote the saved value into the asset.");
+        }
+
+        [Test]
+        public void Start_RegistersOnlyAfterLoading()
+        {
+            SaveLevel(7);
+
+            int levelSeenAtRegistration = -1;
+
+            void OnServiceRegistered(Type type, IService registeredService)
+            {
+                if (registeredService is IDataService dataService)
+                {
+                    levelSeenAtRegistration = dataService.Get<TestPlayerData>().Level;
+                }
+            }
+
+            ServiceLocator.OnServiceRegistered += OnServiceRegistered;
+
+            try
+            {
+                StartService(CreateAsset<TestPlayerData>());
+            }
+            finally
+            {
+                ServiceLocator.OnServiceRegistered -= OnServiceRegistered;
+            }
+
+            Assert.AreEqual(7, levelSeenAtRegistration);
+        }
+
+        [Test]
+        public void Start_WithSavedTuningAndUnchangedDefault_KeepsTheTuningInADevelopmentBuild()
+        {
+            TestGameData firstAsset = CreateAsset<TestGameData>();
+            firstAsset.MaxLifeCount = 3;
+            DataService firstService = StartService(firstAsset);
+            firstService.Get<TestGameData>().MaxLifeCount = 9;
+            firstService.SaveAll();
             DestroyService();
 
-            GameData secondDefault = CreateData<GameData>();
-            SetValue(secondDefault, "_maxLifeCount", 5);
-            DataService service = StartService(CreateData<PlayerData>(), CreateData<GameData>(),
-                CreateData<SettingsData>(), defaultGameData: secondDefault);
+            TestGameData secondAsset = CreateAsset<TestGameData>();
+            secondAsset.MaxLifeCount = 3;
+            DataService secondService = StartService(secondAsset);
 
-            Assert.AreEqual(5, GetValue<int>(service.GameData, "_maxLifeCount"),
+            Assert.AreEqual(9, secondService.Get<TestGameData>().MaxLifeCount);
+        }
+
+        [Test]
+        public void Start_WithSavedTuningAndChangedDefault_UsesTheNewDefaultAndDropsTheFile()
+        {
+            TestGameData firstAsset = CreateAsset<TestGameData>();
+            firstAsset.MaxLifeCount = 3;
+            DataService firstService = StartService(firstAsset);
+            firstService.Get<TestGameData>().MaxLifeCount = 9;
+            firstService.SaveAll();
+            DestroyService();
+
+            TestGameData secondAsset = CreateAsset<TestGameData>();
+            secondAsset.MaxLifeCount = 5;
+            DataService secondService = StartService(secondAsset);
+
+            Assert.AreEqual(5, secondService.Get<TestGameData>().MaxLifeCount,
                 "The saved tuning value won over the changed default.");
+            Assert.IsFalse(File.Exists(GetFilePath(nameof(TestGameData))));
         }
 
         [Test]
-        public void Start_WithCutOffPlayerFile_LogsNoErrorAndUsesDefaults()
+        public void SaveAll_InAReleaseBuild_WritesNoTuningFile()
         {
-            WriteFile(PlayerDataPath, "{\"_level\":7,\"_sco");
+            DataService service = StartService(isDevelopmentBuild: false, CreateAsset<TestGameData>());
+            service.Get<TestGameData>().MaxLifeCount = 9;
 
-            DataService service = StartService(CreateData<PlayerData>(), CreateData<GameData>(),
-                CreateData<SettingsData>());
+            service.SaveAll();
 
-            Assert.AreEqual(0, GetValue<int>(service.PlayerData, "_level"));
+            Assert.IsFalse(File.Exists(GetFilePath(nameof(TestGameData))));
         }
 
         [Test]
-        public void Start_WithCutOffPlayerFile_StillLoadsGameData()
+        public void Start_InAReleaseBuild_IgnoresATuningFile()
         {
-            WriteFile(PlayerDataPath, "{\"_level\":7,\"_sco");
-            WriteFile(GameDataPath, "{\"_maxLifeCount\":3,\"_lifeReplenishDuration\":0}");
-            LogAssert.ignoreFailingMessages = true;
-
-            DataService service = StartService(CreateData<PlayerData>(), CreateData<GameData>(),
-                CreateData<SettingsData>());
-
-            LogAssert.ignoreFailingMessages = false;
-            Assert.AreEqual(3, GetValue<int>(service.GameData, "_maxLifeCount"),
-                "A damaged player file stopped the game data from loading.");
-        }
-
-        [Test]
-        public void Save_WritesNoEditorSettingsIntoTheFile()
-        {
-            DataService service = StartService(CreateData<PlayerData>(), CreateData<GameData>(),
-                CreateData<SettingsData>());
-
-            service.SavePlayerData();
-
-            string fileText = File.ReadAllText(PlayerDataPath);
-            StringAssert.DoesNotContain("_srDataOptions", fileText);
-        }
-
-        [Test]
-        public void Start_WithSaveInTheOtherFormat_LogsNoErrorAndKeepsTheSavedValue()
-        {
-            PlayerData firstSessionData = CreateData<PlayerData>();
-            StartService(firstSessionData, CreateData<GameData>(), CreateData<SettingsData>());
-            SetValue(firstSessionData, "_level", 7);
-            _serviceObject.GetComponent<DataService>().SavePlayerData();
+            TestGameData firstAsset = CreateAsset<TestGameData>();
+            DataService firstService = StartService(firstAsset);
+            firstService.Get<TestGameData>().MaxLifeCount = 9;
+            firstService.SaveAll();
             DestroyService();
 
-            DataService service = StartService(CreateData<PlayerData>(), CreateData<GameData>(),
-                CreateData<SettingsData>(), DataSerializationFormat.Binary);
+            DataService secondService = StartService(isDevelopmentBuild: false, CreateAsset<TestGameData>());
 
-            Assert.AreEqual(7, GetValue<int>(service.PlayerData, "_level"),
-                "A save written as Json could not be read after switching the format to Binary.");
+            Assert.AreEqual(0, secondService.Get<TestGameData>().MaxLifeCount);
         }
 
-        private DataService StartService(PlayerData playerData, GameData gameData, SettingsData settingsData,
-            DataSerializationFormat serializationFormat = DataSerializationFormat.Json,
-            GameData defaultGameData = null)
+        [Test]
+        public void Start_WithCutOffFileAndNoBackup_UsesTheDefaultsWithAWarning()
+        {
+            WriteFile(GetFilePath(nameof(TestPlayerData)), _cutOffFileText);
+            LogAssert.Expect(LogType.Warning, new Regex("TestPlayerData.*defaults are used"));
+
+            TestPlayerData asset = CreateAsset<TestPlayerData>();
+            asset.Level = 2;
+            DataService service = StartService(asset);
+
+            Assert.AreEqual(2, service.Get<TestPlayerData>().Level);
+        }
+
+        [Test]
+        public void Start_WithCutOffFileAndABackup_LoadsTheBackupWithAWarning()
+        {
+            DataService firstService = StartService(CreateAsset<TestPlayerData>());
+            firstService.Get<TestPlayerData>().Level = 6;
+            firstService.SaveAll();
+            firstService.Get<TestPlayerData>().Level = 7;
+            firstService.SaveAll();
+            DestroyService();
+
+            WriteFile(GetFilePath(nameof(TestPlayerData)), _cutOffFileText);
+            LogAssert.Expect(LogType.Warning, new Regex("TestPlayerData.*backup was loaded"));
+
+            DataService secondService = StartService(CreateAsset<TestPlayerData>());
+
+            Assert.AreEqual(6, secondService.Get<TestPlayerData>().Level);
+        }
+
+        [Test]
+        public void Start_WithOneCutOffFile_StillLoadsTheOthers()
+        {
+            DataService firstService = StartService(CreateAsset<TestPlayerData>(), CreateAsset<TestVersionedData>());
+            firstService.Get<TestVersionedData>().Score = 3;
+            firstService.SaveAll();
+            DestroyService();
+
+            WriteFile(GetFilePath(nameof(TestPlayerData)), _cutOffFileText);
+            LogAssert.Expect(LogType.Warning, new Regex("TestPlayerData"));
+
+            DataService secondService =
+                StartService(CreateAsset<TestPlayerData>(), CreateAsset<TestVersionedData>());
+
+            Assert.AreEqual(3, secondService.Get<TestVersionedData>().Score,
+                "A damaged first file stopped the files after it from loading.");
+        }
+
+        [Test]
+        public void Save_WritesNoOptionSettingsIntoTheFile_AndKeepsThemOnTheContainer()
+        {
+            TestPlayerData asset = CreateAsset<TestPlayerData>();
+            asset.SRDataOptionList.Add(new SRDataOptionEntry { PropertyName = "Level" });
+            DataService service = StartService(asset);
+
+            service.Save<TestPlayerData>();
+
+            string fileText = File.ReadAllText(GetFilePath(nameof(TestPlayerData)));
+            StringAssert.DoesNotContain("_srDataOptions", fileText);
+            StringAssert.Contains("\"_level\":0", fileText);
+            Assert.AreEqual(1, service.Get<TestPlayerData>().SRDataOptions.Count);
+        }
+
+        [Test]
+        public void Save_WithoutAFile_WritesOne()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+
+            service.Save<TestPlayerData>();
+
+            Assert.IsTrue(File.Exists(GetFilePath(nameof(TestPlayerData))));
+        }
+
+        [Test]
+        public void Save_WhenNothingChanged_DoesNotWriteAgain()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            service.Save<TestPlayerData>();
+
+            service.Save<TestPlayerData>();
+
+            Assert.IsFalse(File.Exists(GetBackupPath(nameof(TestPlayerData))),
+                "A second write happened: the first file became a backup.");
+        }
+
+        [Test]
+        public void Save_AfterAListChanged_WritesAgain()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            service.Save<TestPlayerData>();
+
+            service.Get<TestPlayerData>().Items.Add(12);
+            service.Save<TestPlayerData>();
+
+            Assert.IsTrue(File.Exists(GetBackupPath(nameof(TestPlayerData))));
+            StringAssert.Contains("\"_items\":[12]", File.ReadAllText(GetFilePath(nameof(TestPlayerData))));
+        }
+
+        [Test]
+        public void Pause_SavesChangedContainers()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            service.Get<TestPlayerData>().Level = 5;
+
+            service.SendMessage("OnApplicationPause", true);
+
+            StringAssert.Contains("\"_level\":5", File.ReadAllText(GetFilePath(nameof(TestPlayerData))));
+        }
+
+        [Test]
+        public void Pause_WithSaveOnPauseOff_SavesNothing()
+        {
+            DataService service = StartService(isDevelopmentBuild: true, saveOnPause: false,
+                CreateAsset<TestPlayerData>());
+            service.Get<TestPlayerData>().Level = 5;
+
+            service.SendMessage("OnApplicationPause", true);
+
+            Assert.IsFalse(File.Exists(GetFilePath(nameof(TestPlayerData))));
+        }
+
+        [Test]
+        public void Destroy_SavesChangedContainersAndDeregisters()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            service.Get<TestPlayerData>().Level = 5;
+
+            DestroyService();
+
+            StringAssert.Contains("\"_level\":5", File.ReadAllText(GetFilePath(nameof(TestPlayerData))));
+            Assert.IsFalse(ServiceLocator.IsRegistered<IDataService>());
+        }
+
+        [Test]
+        public void Reset_PutsTheDefaultsBackIntoTheSameObjectAndSaves()
+        {
+            TestPlayerData asset = CreateAsset<TestPlayerData>();
+            asset.Level = 1;
+            DataService service = StartService(asset);
+            TestPlayerData playerData = service.Get<TestPlayerData>();
+            playerData.Level = 8;
+            playerData.Items.Add(3);
+            service.Save<TestPlayerData>();
+
+            service.Reset<TestPlayerData>();
+
+            Assert.AreSame(playerData, service.Get<TestPlayerData>());
+            Assert.AreEqual(1, playerData.Level);
+            Assert.AreEqual(0, playerData.Items.Count);
+            StringAssert.Contains("\"_level\":1", File.ReadAllText(GetFilePath(nameof(TestPlayerData))));
+        }
+
+        [Test]
+        public void Reset_OfTuning_DeletesItsFile()
+        {
+            DataService service = StartService(CreateAsset<TestGameData>());
+            service.Get<TestGameData>().MaxLifeCount = 9;
+            service.SaveAll();
+            Assert.IsTrue(File.Exists(GetFilePath(nameof(TestGameData))));
+
+            service.Reset<TestGameData>();
+
+            Assert.AreEqual(0, service.Get<TestGameData>().MaxLifeCount);
+            Assert.IsFalse(File.Exists(GetFilePath(nameof(TestGameData))));
+        }
+
+        [Test]
+        public void Start_WithASaveOfAnOlderVersion_CallsMigrateAndWritesTheNewVersion()
+        {
+            var storage = new DataStorage(_folderPath, _obfuscationKey);
+            const string savedJson = "{\"_score\":4,\"_oldField\":11}";
+            storage.Write(nameof(TestVersionedData), obfuscate: false, new DataFileContent(1, null, savedJson));
+
+            DataService service = StartService(CreateAsset<TestVersionedData>());
+            TestVersionedData versionedData = service.Get<TestVersionedData>();
+
+            Assert.AreEqual(4, versionedData.Score);
+            Assert.AreEqual(1, versionedData.MigratedFromVersion);
+            Assert.AreEqual(savedJson, versionedData.MigratedJson);
+
+            service.SaveAll();
+
+            storage.Read(nameof(TestVersionedData), DataFileKind.Current, obfuscate: false,
+                out DataFileContent content);
+            Assert.AreEqual(TestVersionedData.CurrentDataVersion, content.Version);
+        }
+
+        [Test]
+        public void Start_WithASaveOfTheCurrentVersion_DoesNotCallMigrate()
+        {
+            DataService firstService = StartService(CreateAsset<TestVersionedData>());
+            firstService.Get<TestVersionedData>().Score = 4;
+            firstService.SaveAll();
+            DestroyService();
+
+            DataService secondService = StartService(CreateAsset<TestVersionedData>());
+
+            Assert.AreEqual(-1, secondService.Get<TestVersionedData>().MigratedFromVersion);
+        }
+
+        [Test]
+        public void Save_OfAnObfuscatedContainer_IsNotReadableAsText_AndLoadsAgain()
+        {
+            DataService firstService = StartService(CreateAsset<TestSecretData>());
+            firstService.Get<TestSecretData>().Coins = 321;
+            firstService.SaveAll();
+            DestroyService();
+
+            StringAssert.DoesNotContain("_coins", File.ReadAllText(GetFilePath("Secret")));
+
+            DataService secondService = StartService(CreateAsset<TestSecretData>());
+
+            Assert.AreEqual(321, secondService.Get<TestSecretData>().Coins);
+        }
+
+        [Test]
+        public void Start_WithAClassWithoutTheAttribute_LogsAnErrorAndLoadsTheRest()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("TestUnmarkedData has no \\[DataFile\\] attribute"));
+
+            DataService service = StartService(CreateAsset<TestUnmarkedData>(), CreateAsset<TestPlayerData>());
+
+            Assert.IsFalse(service.TryGet(out TestUnmarkedData _));
+            Assert.IsTrue(service.TryGet(out TestPlayerData _));
+        }
+
+        [Test]
+        public void Start_WithAnEmptyEntry_LogsAnErrorAndLoadsTheRest()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("entry 0 of the container list is empty"));
+
+            DataService service = StartService(null, CreateAsset<TestPlayerData>());
+
+            Assert.IsTrue(service.TryGet(out TestPlayerData _));
+        }
+
+        [Test]
+        public void Start_WithTheSameClassTwice_LogsAnErrorAndKeepsTheFirst()
+        {
+            TestPlayerData firstAsset = CreateAsset<TestPlayerData>();
+            firstAsset.Level = 1;
+            TestPlayerData secondAsset = CreateAsset<TestPlayerData>();
+            secondAsset.Level = 2;
+            LogAssert.Expect(LogType.Error, new Regex("TestPlayerData is in the container list twice"));
+
+            DataService service = StartService(firstAsset, secondAsset);
+
+            Assert.AreEqual(1, service.Get<TestPlayerData>().Level);
+        }
+
+        [Test]
+        public void Get_OfAClassThatIsNotInTheList_LogsAnErrorAndReturnsNull()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            LogAssert.Expect(LogType.Error, new Regex("TestGameData is not in the container list"));
+
+            Assert.IsNull(service.Get<TestGameData>());
+        }
+
+        [Test]
+        public void TryGet_OfAClassThatIsNotInTheList_ReturnsFalseQuietly()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+
+            Assert.IsFalse(service.TryGet(out TestGameData gameData));
+            Assert.IsNull(gameData);
+        }
+
+        [Test]
+        public void GetContainers_FillsTheListWithTheRuntimeCopies()
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>(), CreateAsset<TestGameData>());
+            var results = new List<DataContainer> { null };
+
+            service.GetContainers(results);
+
+            Assert.AreEqual(2, results.Count);
+            Assert.AreSame(service.Get<TestPlayerData>(), results[0]);
+            Assert.AreSame(service.Get<TestGameData>(), results[1]);
+        }
+
+        [Test]
+        public void JsonUtility_IgnoresFormerlySerializedAs()
+        {
+            // Migrate is handed the raw JSON because of this. If this test ever fails, the README's note on
+            // renamed fields is out of date.
+            TestRenamedFieldData renamedFieldData = CreateAsset<TestRenamedFieldData>();
+
+            JsonUtility.FromJsonOverwrite("{\"_oldName\":5}", renamedFieldData);
+
+            Assert.AreEqual(0, renamedFieldData.NewName);
+        }
+
+        private void SaveLevel(int level)
+        {
+            DataService service = StartService(CreateAsset<TestPlayerData>());
+            service.Get<TestPlayerData>().Level = level;
+            service.SaveAll();
+            DestroyService();
+        }
+
+        private DataService StartService(params DataContainer[] containers)
+        {
+            return StartService(isDevelopmentBuild: true, saveOnPause: true, containers);
+        }
+
+        private DataService StartService(bool isDevelopmentBuild, params DataContainer[] containers)
+        {
+            return StartService(isDevelopmentBuild, saveOnPause: true, containers);
+        }
+
+        private DataService StartService(bool isDevelopmentBuild, bool saveOnPause,
+            params DataContainer[] containers)
         {
             _serviceObject = new GameObject("DataService");
             _serviceObject.SetActive(false);
 
             DataService service = _serviceObject.AddComponent<DataService>();
-            SetValue(service, "_playerData", playerData);
-            SetValue(service, "_gameData", gameData);
-            SetValue(service, "_settingsData", settingsData);
-            SetValue(service, "_defaultGameData", defaultGameData);
-            SetValue(service, "_serializationFormat", serializationFormat);
+            service.ContainerAssets.AddRange(containers);
+            service.ObfuscationKey = _obfuscationKey;
+            service.FolderPath = _folderPath;
+            service.IsDevelopmentBuild = isDevelopmentBuild;
+            service.SaveOnPause = saveOnPause;
 
             _serviceObject.SetActive(true);
 
@@ -147,43 +506,23 @@ namespace AngryKoala.Data.Tests
 
         #region Utility
 
-        private static TData CreateData<TData>() where TData : ScriptableObject
+        private TContainer CreateAsset<TContainer>() where TContainer : DataContainer
         {
-            return ScriptableObject.CreateInstance<TData>();
+            TContainer asset = ScriptableObject.CreateInstance<TContainer>();
+            asset.name = typeof(TContainer).Name;
+            _createdObjects.Add(asset);
+
+            return asset;
         }
 
-        private static void WriteFile(string path, string text)
+        private string GetFilePath(string fileName) => Path.Combine(_folderPath, fileName + ".dat");
+
+        private string GetBackupPath(string fileName) => Path.Combine(_folderPath, fileName + ".bak");
+
+        private void WriteFile(string path, string text)
         {
-            Directory.CreateDirectory(DataPath);
+            Directory.CreateDirectory(_folderPath);
             File.WriteAllText(path, text);
-        }
-
-        private static void DeleteSavedFiles()
-        {
-            if (Directory.Exists(DataPath))
-            {
-                Directory.Delete(DataPath, recursive: true);
-            }
-        }
-
-        private static void SetValue(object target, string fieldName, object value)
-        {
-            GetField(target, fieldName).SetValue(target, value);
-        }
-
-        private static TValue GetValue<TValue>(object target, string fieldName)
-        {
-            return (TValue)GetField(target, fieldName).GetValue(target);
-        }
-
-        private static FieldInfo GetField(object target, string fieldName)
-        {
-            const BindingFlags bindingFlags = BindingFlags.Instance | BindingFlags.NonPublic;
-
-            FieldInfo field = target.GetType().GetField(fieldName, bindingFlags);
-            Assert.IsNotNull(field, $"{target.GetType().Name} has no field {fieldName}.");
-
-            return field;
         }
 
         #endregion

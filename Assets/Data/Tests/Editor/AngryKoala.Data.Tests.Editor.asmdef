@@ -4,6 +4,7 @@
     "references": [
         "AngryKoala.Data",
         "AngryKoala.Data.Editor",
+        "AngryKoala.Data.Tests.Runtime",
         "AngryKoala.Services",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
